@@ -57,6 +57,11 @@ pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
 }
 
 #[inline(always)]
+const fn zero_byte_mask(x: usize) -> usize {
+    x.wrapping_sub(LO_USIZE) & !x & HI_USIZE
+}
+
+#[inline(always)]
 unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
     let mut i = len;
     while i != 0 {
@@ -126,31 +131,29 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         // SAFETY: the while's predicate guarantees a distance of at least 2 * usize_bytes
         // between the offset and the end of the slice.
         unsafe {
-            let u = *(ptr.add(offset) as *const usize);
-            let v = *(ptr.add(offset + USIZE_BYTES) as *const usize);
+            let u = (ptr.add(offset) as *const usize).read();
+            let v = (ptr.add(offset + USIZE_BYTES) as *const usize).read();
 
             // break if there is a matching byte
-            let zu = contains_zero_byte(u ^ repeated_x);
-            let zv = contains_zero_byte(v ^ repeated_x);
+            // let zu = contains_zero_byte(u ^ repeated_x);
 
             // ! OPTIMIZATION !
-            #[cfg(target_endian = "little")]
-            if let Some(lower) = zu {
-                return Some(offset + (lower.trailing_zeros() >> 3) as usize);
-            }
-            #[cfg(target_endian = "little")]
-            if let Some(upper) = zv {
-                return Some(offset + USIZE_BYTES + (upper.trailing_zeros() >> 3) as usize);
+            let zu = zero_byte_mask(u ^ repeated_x);
+            if zu != 0 {
+                #[cfg(target_endian = "little")]
+                return Some(offset + (zu.trailing_zeros() >> 3) as usize);
+
+                #[cfg(target_endian = "big")]
+                return Some(offset + (zu.leading_zeros() >> 3) as usize);
             }
 
-            #[cfg(target_endian = "big")]
-            if let Some(lower) = zu {
-                return Some(offset + (lower.leading_zeros() >> 3) as usize);
-            }
+            let zv = zero_byte_mask(v ^ repeated_x);
+            if zv != 0 {
+                #[cfg(target_endian = "little")]
+                return Some(offset + USIZE_BYTES + (zv.trailing_zeros() >> 3) as usize);
 
-            #[cfg(target_endian = "big")]
-            if let Some(upper) = zv {
-                return Some(offset + USIZE_BYTES + (upper.leading_zeros() >> 3) as usize);
+                #[cfg(target_endian = "big")]
+                return Some(offset + USIZE_BYTES + (zv.leading_zeros() >> 3) as usize);
             }
         }
 
@@ -424,6 +427,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             let contains_lower = contains_zero_byte(u ^ repeated_x);
             let contains_upper = contains_zero_byte(v ^ repeated_x);
 
+            // TODO: add zero_byte_mask wrapper 
             // ! OPTIMIZATION !
             #[cfg(target_endian = "little")]
             if let Some(upper) = contains_upper {
