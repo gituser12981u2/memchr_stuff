@@ -9,6 +9,7 @@ pub(crate) const fn repeat_u8(x: u8) -> usize {
 
 /// Returns an `usize` where every byte pair is equal to `x`.
 #[inline]
+#[allow(unused)]
 pub(crate) const fn repeat_u16(x: u16) -> usize {
     let mut r = 0usize;
     let mut i = 0;
