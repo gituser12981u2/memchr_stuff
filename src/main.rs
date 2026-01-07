@@ -18,19 +18,18 @@ macro_rules! find_swar_last_index {
             // `$num` has the high bit (0x80) set in each byte that matched.
             // On big-endian, the last byte index corresponds to the least-significant
             // set bit in the word.
-            let tz = $num.trailing_zeros();
-            (((usize::BITS - 1) - tz) / 8) as usize
+            (((usize::BITS - 1) - $num.trailing_zeros()) >> 3) as usize
         }
         #[cfg(target_endian = "little")]
         {
             // `$num` has the high bit (0x80) set in each byte that matched.
             // On little-endian, the last byte index corresponds to the most-significant
             // set bit in the word.
-            let lz = $num.leading_zeros();
-            (((usize::BITS - 1) - lz) / 8) as usize
+            (((usize::BITS - 1) - $num.leading_zeros()) >> 3) as usize
         }
     }};
 }
+
 /*
 
 the rightmost 0-byte.
@@ -58,11 +57,13 @@ n = (32 - nlz(~y & (y - 1))) >> 3
 */
 #[inline]
 pub const fn find_last_char_in_word(c: u8, input: usize) -> Option<usize> {
+    const MASK: usize = repeat_u8(0x7F);
     let x = input ^ repeat_u8(c);
+    let y = (x & MASK).wrapping_add(MASK);
 
-    let y = contains_zero_byte_reversed(x);
+    let swarred = NonZeroUsize::new(!(y | x | MASK));
 
-    match y {
+    match swarred {
         Some(num) => Some(find_swar_last_index!(num)),
         None => None,
     }
