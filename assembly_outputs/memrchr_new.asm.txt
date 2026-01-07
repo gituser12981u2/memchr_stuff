@@ -1,0 +1,100 @@
+.section .text.memchr_stuff::memchr_new::memrchr,"ax",@progbits
+	.globl	memchr_stuff::memchr_new::memrchr
+	.p2align	4
+.type	memchr_stuff::memchr_new::memrchr,@function
+memchr_stuff::memchr_new::memrchr:
+	.cfi_startproc
+	mov rax, rdx
+	lea r8, [rsi + 7]
+	and r8, -8
+	sub r8, rsi
+	mov rcx, rdx
+	sub rcx, r8
+	and ecx, 15
+	xor r9d, r9d
+	cmp rdx, r8
+	cmovbe r8, rdx
+	cmovae r9, rcx
+	mov rcx, rdx
+	sub rcx, r9
+	.p2align	4
+.LBB1_1:
+	sub r9, 1
+	jb .LBB1_2
+	lea rdx, [rax - 1]
+	cmp byte ptr [rsi + rax - 1], dil
+	mov rax, rdx
+	jne .LBB1_1
+.LBB1_9:
+	mov eax, 1
+	ret
+.LBB1_2:
+	movabs rax, -9187201950435737472
+	movabs rdx, 72340172838076672
+	movzx r10d, dil
+	lea r9, [rdx + 1]
+	imul r9, r10
+	.p2align	4
+.LBB1_3:
+	cmp rcx, r8
+	jbe .LBB1_4
+	mov r10, qword ptr [rsi + rcx - 8]
+	xor r10, r9
+	mov r11, rdx
+	sub r11, r10
+	or r11, r10
+	not r11
+	test rax, r11
+	jne .LBB1_12
+	mov r10, qword ptr [rsi + rcx - 16]
+	xor r10, r9
+	add rcx, -16
+	mov r11, rdx
+	sub r11, r10
+	or r11, r10
+	not r11
+	test rax, r11
+	je .LBB1_3
+	movabs rdx, 9187201950435737471
+	mov rsi, r10
+	and rsi, rdx
+	add rsi, rdx
+	or rsi, r10
+	not rsi
+	and rsi, rax
+	bsr rdx, rsi
+	xor edx, 56
+	shr edx, 3
+	xor rdx, 7
+	add rdx, rcx
+	mov eax, 1
+	ret
+.LBB1_4:
+	xor eax, eax
+	mov rdx, rcx
+	.p2align	4
+.LBB1_5:
+	sub rdx, 1
+	jb .LBB1_6
+	cmp byte ptr [rsi + rcx - 1], dil
+	mov rcx, rdx
+	jne .LBB1_5
+	jmp .LBB1_9
+.LBB1_12:
+	movabs rdx, 9187201950435737471
+	mov rsi, r10
+	and rsi, rdx
+	add rsi, rdx
+	or rsi, r10
+	not rsi
+	and rsi, rax
+	bsr rax, rsi
+	xor eax, 56
+	shr eax, 3
+	xor rax, 7
+	lea rdx, [rax + rcx]
+	add rdx, -8
+	mov eax, 1
+	ret
+.LBB1_6:
+	ret

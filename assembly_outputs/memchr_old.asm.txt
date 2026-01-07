@@ -1,0 +1,3 @@
+Try one of those by name or a sequence number
+0 "memchr_stuff::memchr_old::memchr" [191]
+1 "memchr_stuff::memchr_old::memchr_aligned_at_rt" [166]

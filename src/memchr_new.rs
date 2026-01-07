@@ -2,32 +2,16 @@
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 #![allow(clippy::undocumented_unsafe_blocks)]
 #![allow(clippy::empty_line_after_doc_comments)]
-//#![allow(warnings)]
-
-// I was reading through the std library for random silly things and I found this , https://doc.rust-lang.org/src/core/slice/memchr.rs.html#111-161
-// this essentially provides a more rigorous foundation to my SWAR technique.
-//the original definition is below the copy pasted code above.
-//#![allow(clippy::all)]
-//#![allow(warnings)] //the warnings are from memchr and thats a std lib func, too strict lints!
-//I really prefer having some strong foundation to rely on, so I'll use it and say stuff it to pride. Make it easy for people to verify.
-
-///copy pasting code here, will probably add something in the readme about it.
-///
-///I have not (yet, this comment maybe wrong)
-/// I might do it, depends on use case.
-// ive rewritten memchr to not rely on nightly too, so i can use without any deps
 
 // Original implementation taken from rust-memchr.
-
-// Copyright 2015 Andrew Gallant, bluss and Nicolas Koch
 
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8;
 
 use core::num::NonZeroUsize;
 
+//optionally remove if wanted, not necessary, just cleaner
 macro_rules! find_swar_last_index {
-    // SWAR
     ($num:expr) => {{
         #[cfg(target_endian = "big")]
         {
@@ -39,9 +23,8 @@ macro_rules! find_swar_last_index {
         }
     }};
 }
-
+// as above
 macro_rules! find_swar_index {
-    // SWAR
     ($num:expr) => {{
         #[cfg(target_endian = "big")]
         {
@@ -76,6 +59,7 @@ pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> /* MINIMUM ADD
 }
 
 #[inline]
+// Check assembly to see if we need this Adrian, you did it lol.
 const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
     let mut i = len;
     while i != 0 {
@@ -172,19 +156,55 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     memchr_naive(x, slice).map(|i| offset + i)
 }
 
+/*
+http://www.icodeguru.com/Embedded/Hacker%27s-Delight/043.htm
+
+
+
+Figure 6-2 Find leftmost 0-byte, branch-free code.
+
+int zbytel(unsigned x) {
+
+   unsigned y;
+
+   int n;
+
+                        ?/ Original byte: 00 80 other
+
+   y = (x & 0x7F7F7F7F) + 0x7F7F7F7F;   // 7F 7F 1xxxxxxx
+
+   y = ~(y | x | 0x7F7F7F7F);           // 80 00 00000000
+
+   n = nlz(y) >> 3;             // n = 0 ... 4, 4 if x
+
+   return n;                  ?// has no 0-byte.
+
+}
+
+The position of the rightmost 0-byte is given by the number of trailing 0's in the final value of y computed above, divided by 8 (with fraction discarded). Using the expression for computing the number of trailing 0's by means of the number of leading zeros instruction (see Section 5- 4, "Counting Trailing 0's," on page 84), this can be computed by replacing the assignment to n in the procedure above with:
+
+n = (32 - nlz(~y & (y - 1))) >> 3;
+
+This is a 12-instruction solution, if the machine has nor and and not.
+
+In most situations on PowerPC, incidentally, a procedure to find the rightmost 0-byte would not be needed. Instead, the words can be loaded with the load word byte-reverse instruction (lwbrx).
+
+The procedure of Figure 6-2 is more valuable on a 64-bit machine than on a 32-bit one, because on a 64-bit machine the procedure (with obvious modifications) requires about the same number of instructions (seven or ten, depending upon how the constant is generated), whereas the technique of Figure 6-1 requires 23 instructions worst case.
+
+*/
 #[inline]
 #[must_use]
-// TODO TIDY UP SAFETY SHIT
+// TODO TIDY UP SAFETY (write up a safety proof for this)
 const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
+    debug_assert!(contains_zero_byte(x).is_some(), "");
     let y = (x & INVERTED_HIGH).wrapping_add(INVERTED_HIGH);
+    // essentially, this algorithm can only be used after the SWAR algorithm has been done on the XOR'ed usize previously,
+    //
     let ans = unsafe { NonZeroUsize::new_unchecked(!(y | x | INVERTED_HIGH)) };
     find_swar_last_index!(ans)
 }
 
 /// Returns the last index matching the byte `x` in `text`.
-///
-/// This is directly copy pasted from the internal library with some modifications to make it work for me
-/// there were no unstable features so I thought I'll skip a dependency and add this.
 ///
 #[must_use]
 #[inline]
@@ -228,7 +248,8 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // Break if there is a matching byte.
         // **CHECK UPPER FIRST**
         let xorred_upper = v ^ repeated_x;
-        // use the original SWAR (fewer instructions) to check for zero byte
+        // use the original SWAR (~2 fewer instructions) to check for zero byte
+        // this is important as its the main bit being executed
         if contains_zero_byte(xorred_upper).is_some() {
             // Then apply alternative SWAR (guaranteed to be nonzero)
             // We need to use an alternative SWAR method because HASZERO propagates 0xFF right(or left, depending on endianness) wise after match
@@ -241,7 +262,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
         let xorred_lower = u ^ repeated_x;
         if contains_zero_byte(xorred_lower).is_some() {
-            // TODO, TIDY UP SAFETY? use nonzerousize etc.
+            // TODO, TIDY UP SAFETY
             // same stuff as above otherwise
             let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_lower) };
 

@@ -134,16 +134,13 @@ fn bench_memrchr(c: &mut Criterion) {
             let data = make_data(size, needle, placement);
 
             group.bench_with_input(
-                //let is_aligned: &str = if size % 8 == 0 { "Aligned" } else { "Unaligned" };
                 BenchmarkId::new(
                     format!("old/{}/{}", placement.name(), alignment_label(size)),
                     size,
                 ),
                 &data,
                 |b, data| {
-                    b.iter(|| {
-                        black_box(memchr_old::memrchr_old(black_box(needle), black_box(data)))
-                    })
+                    b.iter(|| black_box(memchr_old::memrchr(black_box(needle), black_box(data))))
                 },
             );
 
@@ -218,9 +215,10 @@ fn bench_memchr(c: &mut Criterion) {
 criterion_group!(
     name = benches;
     config = Criterion::default()
-        .warm_up_time(Duration::from_secs(2))
-        .measurement_time(Duration::from_secs(5))
-        .sample_size(200);
+        .warm_up_time(Duration::from_millis(200))
+        .measurement_time(Duration::from_millis(1000))
+        .sample_size(10000)
+        .configure_from_args();
     targets = bench_memrchr, bench_memchr
 );
 criterion_main!(benches);

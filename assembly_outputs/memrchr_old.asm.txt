@@ -1,0 +1,105 @@
+.section .text.memchr_stuff::memchr_old::memrchr,"ax",@progbits
+	.globl	memchr_stuff::memchr_old::memrchr
+	.p2align	4
+.type	memchr_stuff::memchr_old::memrchr,@function
+memchr_stuff::memchr_old::memrchr:
+	.cfi_startproc
+	push r15
+	.cfi_def_cfa_offset 16
+	push r14
+	.cfi_def_cfa_offset 24
+	push rbx
+	.cfi_def_cfa_offset 32
+	.cfi_offset rbx, -32
+	.cfi_offset r14, -24
+	.cfi_offset r15, -16
+	lea r8, [rsi + 7]
+	and r8, -8
+	sub r8, rsi
+	mov rax, rdx
+	mov rcx, rdx
+	cmp rdx, r8
+	jb .LBB4_3
+	mov ecx, edx
+	sub ecx, r8d
+	and ecx, 15
+	mov rax, rdx
+	sub rax, rcx
+	jb .LBB4_6
+	mov rcx, r8
+.LBB4_3:
+	mov r9, rax
+	neg r9
+	mov r10, rdx
+	.p2align	4
+.LBB4_4:
+	mov r8, r9
+	add r8, r10
+	je .LBB4_7
+	lea r8, [r10 - 1]
+	cmp byte ptr [rsi + r10 - 1], dil
+	mov r10, r8
+	jne .LBB4_4
+	jmp .LBB4_15
+.LBB4_7:
+	movabs r8, -9187201950435737472
+	movabs r10, 72340172838076672
+	movzx r9d, dil
+	lea r11, [r10 + 1]
+	imul r11, r9
+	.p2align	4
+.LBB4_8:
+	mov r9, rax
+	cmp rax, rcx
+	jbe .LBB4_10
+	lea rax, [r9 - 16]
+	mov rbx, qword ptr [rsi + r9 - 16]
+	xor rbx, r11
+	mov r14, r10
+	sub r14, rbx
+	or r14, rbx
+	mov rbx, qword ptr [rsi + r9 - 8]
+	xor rbx, r11
+	mov r15, r10
+	sub r15, rbx
+	or r15, rbx
+	and r14, r8
+	and r14, r15
+	cmp r14, r8
+	je .LBB4_8
+.LBB4_10:
+	cmp r9, rdx
+	ja .LBB4_17
+	xor eax, eax
+	.p2align	4
+.LBB4_12:
+	test r9, r9
+	je .LBB4_13
+	lea r8, [r9 - 1]
+	cmp byte ptr [rsi + r9 - 1], dil
+	mov r9, r8
+	jne .LBB4_12
+.LBB4_15:
+	mov eax, 1
+	jmp .LBB4_16
+.LBB4_13:
+.LBB4_16:
+	mov rdx, r8
+	pop rbx
+	.cfi_def_cfa_offset 24
+	pop r14
+	.cfi_def_cfa_offset 16
+	pop r15
+	.cfi_def_cfa_offset 8
+	ret
+.LBB4_17:
+	.cfi_def_cfa_offset 32
+	lea rcx, [rip + .Lanon.1fe6499be026b1b15257fd89cba400f7.1]
+	xor edi, edi
+	mov rsi, r9
+	call qword ptr [rip + core::slice::index::slice_index_fail@GOTPCREL]
+.LBB4_6:
+	lea rcx, [rip + .Lanon.1fe6499be026b1b15257fd89cba400f7.2]
+	mov rdi, rax
+	mov rsi, rdx
+	call qword ptr [rip + core::slice::index::slice_index_fail@GOTPCREL]
