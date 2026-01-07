@@ -24,8 +24,35 @@
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8;
 
-use crate::{find_swar_index, find_swar_last_index};
 use core::num::NonZeroUsize;
+
+macro_rules! find_swar_last_index {
+    // SWAR
+    ($num:expr) => {{
+        #[cfg(target_endian = "big")]
+        {
+            (USIZE_BYTES - 1 - (($num.trailing_zeros()) >> 3) as usize)
+        }
+        #[cfg(target_endian = "little")]
+        {
+            (USIZE_BYTES - 1 - (($num.leading_zeros()) >> 3) as usize)
+        }
+    }};
+}
+
+macro_rules! find_swar_index {
+    // SWAR
+    ($num:expr) => {{
+        #[cfg(target_endian = "big")]
+        {
+            ($num.leading_zeros() >> 3) as usize
+        }
+        #[cfg(target_endian = "little")]
+        {
+            ($num.trailing_zeros() >> 3) as usize
+        }
+    }};
+}
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
@@ -76,7 +103,7 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     let mut i = 0;
 
     // FIXME(const-hack): Replace with `text.iter().pos(|c| *c == x)`.
-    // rust elides the bounds check
+    // rust elides the bounds check (asm checked )
     while i < text.len() {
         if text[i] == x {
             return Some(i);
@@ -208,6 +235,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             // this could be done with a byte swap but thats 1 (or more, depending on arch) instructions
             // use this only when a match is FOUND
             let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_upper) };
+            //todo check asm to see if constant folding is done! (should be due to inlining?)
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 

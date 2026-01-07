@@ -24,35 +24,7 @@
 pub mod memchr_new;
 pub mod memchr_old;
 pub mod num;
-#[macro_export]
-macro_rules! find_swar_last_index {
-    // SWAR
-    ($num:expr) => {{
-        #[cfg(target_endian = "big")]
-        {
-            (((usize::BITS - 1) - $num.trailing_zeros()) >> 3) as usize
-        }
-        #[cfg(target_endian = "little")]
-        {
-            (((usize::BITS - 1) - $num.leading_zeros()) >> 3) as usize
-        }
-    }};
-}
 
-#[macro_export]
-macro_rules! find_swar_index {
-    // SWAR
-    ($num:expr) => {{
-        #[cfg(target_endian = "big")]
-        {
-            ($num.leading_zeros() >> 3) as usize
-        }
-        #[cfg(target_endian = "little")]
-        {
-            ($num.trailing_zeros() >> 3) as usize
-        }
-    }};
-}
 
 #[cfg(test)]
 pub mod test;
