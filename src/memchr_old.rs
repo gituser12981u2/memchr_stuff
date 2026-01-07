@@ -1,10 +1,7 @@
 // Original implementation taken from rust-memchr.
 // Copyright 2015 Andrew Gallant, bluss and Nicolas Koch
+use core::intrinsics::const_eval_select;
 
-/// TODO: change to work with rust std
-// use crate::intrinsics::const_eval_select;
-
-/// TODO: change to work with rust std
 use crate::num::repeat_u8;
 
 const LO_USIZE: usize = repeat_u8(0x01);
@@ -23,17 +20,16 @@ const fn contains_zero_byte(x: usize) -> bool {
     x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
 }
 
-/// ! MODIFIED FROM ORIGINAL FOR TESTING !
 /// Returns the first index matching the byte `x` in `text`.
 #[inline]
 #[must_use]
-pub fn memchr(x: u8, text: &[u8]) -> Option<usize> {
+pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     // Fast path for small slices.
     if text.len() < 2 * USIZE_BYTES {
         return memchr_naive(x, text);
     }
 
-    memchr_aligned_runtime(x, text)
+    memchr_aligned(x, text)
 }
 
 #[inline]
@@ -52,9 +48,17 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     None
 }
 
-/// ! MODIFIED FROM ORIGINAL FOR TESTING !
 #[inline]
-fn memchr_aligned_runtime(x: u8, text: &[u8]) -> Option<usize> {
+const fn memchr_aligned_in_const(x: u8, text: &[u8]) -> Option<usize> {
+    memchr_naive(x, text)
+}
+
+#[allow(
+    clippy::manual_map,
+    clippy::option_if_let_else,
+    reason = "faithful to std"
+)] // as above
+fn memchr_aligned_at_rt(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //
     // Split `text` in three parts
@@ -95,11 +99,28 @@ fn memchr_aligned_runtime(x: u8, text: &[u8]) -> Option<usize> {
     }
 
     // Find the byte after the point the body loop stopped.
-    memchr_naive(x, &text[offset..]).map(|i| offset + i)
+    // SAFETY: offset is within bounds
+    let slice = unsafe { core::slice::from_raw_parts(ptr.add(offset), len - offset) };
+    if let Some(i) = memchr_naive(x, slice) {
+        Some(offset + i)
+    } else {
+        None
+    }
+}
+
+#[inline]
+const fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
+    // The runtime version behaves the same as the compiletime version, it's just more optimized.
+    const_eval_select((x, text), memchr_aligned_in_const, memchr_aligned_at_rt)
 }
 
 /// Returns the last index matching the byte `x` in `text`.
 #[must_use]
+#[allow(
+    clippy::missing_inline_in_public_items,
+    clippy::manual_map,
+    reason = "faithful to std"
+)]
 pub fn memrchr_old(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //
@@ -128,7 +149,7 @@ pub fn memrchr_old(x: u8, text: &[u8]) -> Option<usize> {
     // Search the body of the text, make sure we don't cross min_aligned_offset.
     // offset is always aligned, so just testing `>` is sufficient and avoids possible
     // overflow.
-    let repeated_x = repeat_u8(x); // TODO: change to work with rust std
+    let repeated_x = repeat_u8(x);
     let chunk_bytes = size_of::<Chunk>();
 
     while offset > min_aligned_offset {
@@ -148,107 +169,6 @@ pub fn memrchr_old(x: u8, text: &[u8]) -> Option<usize> {
         offset -= 2 * chunk_bytes;
     }
 
-
     // Find the byte before the point the body loop stopped.
     text[..offset].iter().rposition(|elt| *elt == x)
 }
-
-
-
-// ---- ALEX CHANGES WHICH MAY OR MAY NOT BE FAITHFUL TO THE STANDARD LIB ----
-
-// #[inline]
-// #[must_use]
-// pub const fn contains_zero_byte_old(x: usize) -> bool {
-//     x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
-// }
-
-// #[must_use]
-// #[inline]
-// #[allow(clippy::cast_ptr_alignment)] //burntsushi wrote this so...
-// pub fn memrchr_old(x: u8, text: &[u8]) -> Option<usize> {
-//     // Scan for a single byte value by reading two `usize` words at a time.
-
-//     //
-
-//     // Split `text` in three parts:
-
-//     // - unaligned tail, after the last word aligned address in text,
-
-//     // - body, scanned by 2 words at a time,
-
-//     // - the first remaining bytes, < 2 word size.
-
-//     let len = text.len();
-
-//     let ptr = text.as_ptr();
-
-//     type Chunk = usize;
-
-//     let (min_aligned_offset, max_aligned_offset) = {
-//         // We call this just to obtain the length of the prefix and suffix.
-
-//         // In the middle we always process two chunks at once.
-
-//         // SAFETY: transmuting `[u8]` to `[usize]` is safe except for size differences
-
-//         // which are handled by `align_to`.
-
-//         let (prefix, _, suffix) = unsafe { text.align_to::<(Chunk, Chunk)>() };
-
-//         (prefix.len(), len - suffix.len())
-//     };
-
-//     let mut offset = max_aligned_offset;
-
-//     // compiler can't elide bounds checks on this.
-//     //if let Some(index) = text[offset..].iter().rposition(|elt| *elt == x)
-//     if let Some(index) = unsafe {
-//         text.get_unchecked(offset..)
-//             .iter()
-//             .rposition(|elt| *elt == x)
-//     } {
-//         return Some(offset + index);
-//     }
-
-//     // Search the body of the text, make sure we don't cross min_aligned_offset.
-
-//     // offset is always aligned, so just testing `>` is sufficient and avoids possible
-
-//     // overflow.
-
-//     let repeated_x = repeat_u8(x);
-
-//     const CHUNK_BYTES: usize = size_of::<Chunk>();
-
-//     while offset > min_aligned_offset {
-//         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
-//         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
-//         unsafe {
-//             let u = *(ptr.add(offset - 2 * CHUNK_BYTES).cast::<Chunk>());
-
-//             let v = *(ptr.add(offset - CHUNK_BYTES).cast::<Chunk>());
-
-//             // Break if there is a matching byte.
-
-//             let zu = contains_zero_byte_old(u ^ repeated_x);
-
-//             let zv = contains_zero_byte_old(v ^ repeated_x);
-
-//             if zu || zv {
-//                 break;
-//             }
-//         }
-
-//         offset -= 2 * CHUNK_BYTES;
-//     }
-
-//     // Find the byte before the point the body loop stopped.
-//     unsafe {
-//         text.get_unchecked(..offset)
-//             .iter()
-//             .rposition(|elt| *elt == x)
-//     }
-//     // text[..offset].iter().rposition(|elt| *elt == x), avoid a bounds check
-//     // I checked the assembly and it inserted panic branches, didn't like it (since this is panic free)
-// }

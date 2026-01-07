@@ -1,18 +1,6 @@
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
     use crate::memchr_new::memrchr;
-    use std::env::temp_dir;
-    use std::ffi::OsStr;
-    use std::ffi::OsString;
-    use std::fs;
-    use std::fs::File;
-    use std::io::Write;
-    use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::PermissionsExt;
-    use std::os::unix::fs::symlink;
-    use std::path::{Path, PathBuf};
-    use std::sync::Arc;
 
     const PATHS: &[&[u8]] = &[
     b"/proc/1289/task/1423/clear_refs",

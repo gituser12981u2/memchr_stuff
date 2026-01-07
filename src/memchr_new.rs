@@ -21,17 +21,17 @@
 
 // Copyright 2015 Andrew Gallant, bluss and Nicolas Koch
 
-/// TODO: change to work with rust std
+/// TODO: change to work with rust std.
 use crate::num::repeat_u8;
 
 use crate::{find_swar_index, find_swar_last_index};
+use core::num::NonZeroUsize;
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
-
+const INVERTED_HIGH: usize = !HI_USIZE;
+const _: () = const { assert!(INVERTED_HIGH == repeat_u8(0x7F), "should be equal") };
 const USIZE_BYTES: usize = size_of::<usize>();
-
-use core::num::NonZeroUsize;
 
 /// Returns `true` if `x` contains any zero byte.
 ///
@@ -48,7 +48,7 @@ pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> /* MINIMUM ADD
     NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE)
 }
 
-#[inline(always)]
+#[inline]
 const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
     let mut i = len;
     while i != 0 {
@@ -76,6 +76,7 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     let mut i = 0;
 
     // FIXME(const-hack): Replace with `text.iter().pos(|c| *c == x)`.
+    // rust elides the bounds check
     while i < text.len() {
         if text[i] == x {
             return Some(i);
@@ -118,8 +119,8 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         // SAFETY: the while's predicate guarantees a distance of at least 2 * usize_bytes
         // between the offset and the end of the slice.
         unsafe {
-            let u = *(ptr.add(offset) as *const usize);
-            let v = *(ptr.add(offset + USIZE_BYTES) as *const usize);
+            let u = ptr.add(offset).cast::<usize>().read();
+            let v = ptr.add(offset + USIZE_BYTES).cast::<usize>().read();
 
             // break if there is a matching byte
             // ! OPTIMIZATION !
@@ -141,19 +142,16 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // SAFETY: offset is within bounds
                 unsafe { core::slice::from_raw_parts(text.as_ptr().add(offset), text.len() - offset) };
 
-    if let Some(i) = memchr_naive(x, slice) {
-        Some(offset + i)
-    } else {
-        None
-    }
+    memchr_naive(x, slice).map(|i| offset + i)
 }
 
 #[inline]
-pub const fn contains_zero_byte_reversed(x: usize) -> Option<NonZeroUsize> {
-    const MASK: usize = repeat_u8(0x7F);
-
-    let y = (x & MASK).wrapping_add(MASK);
-    NonZeroUsize::new(!(y | x | MASK))
+#[must_use]
+// TODO TIDY UP SAFETY SHIT
+const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
+    let y = (x & INVERTED_HIGH).wrapping_add(INVERTED_HIGH);
+    let ans = unsafe { NonZeroUsize::new_unchecked(!(y | x | INVERTED_HIGH)) };
+    find_swar_last_index!(ans)
 }
 
 /// Returns the last index matching the byte `x` in `text`.
@@ -163,7 +161,6 @@ pub const fn contains_zero_byte_reversed(x: usize) -> Option<NonZeroUsize> {
 ///
 #[must_use]
 #[inline]
-#[allow(clippy::cast_ptr_alignment)] //burntsushi wrote this so...
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //
@@ -173,14 +170,13 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // - the first remaining bytes, < 2 word size.
     let len = text.len();
     let ptr = text.as_ptr();
-    type Chunk = usize;
 
     let (min_aligned_offset, max_aligned_offset) = {
         // We call this just to obtain the length of the prefix and suffix.
         // In the middle we always process two chunks at once.
         // SAFETY: transmuting `[u8]` to `[usize]` is safe except for size differences
         // which are handled by `align_to`.
-        let (prefix, _, suffix) = unsafe { text.align_to::<(Chunk, Chunk)>() };
+        let (prefix, _, suffix) = unsafe { text.align_to::<(usize, usize)>() };
         (prefix.len(), len - suffix.len())
     };
 
@@ -193,31 +189,38 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     }
 
     let repeated_x = repeat_u8(x);
-    const CHUNK_BYTES: usize = size_of::<Chunk>();
 
     while offset > min_aligned_offset {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
-        unsafe {
-            let u = ptr.add(offset - 2 * CHUNK_BYTES).cast::<usize>().read();
 
-            let v = ptr.add(offset - CHUNK_BYTES).cast::<usize>().read();
+        let u = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
 
-            // Break if there is a matching byte.
-            // **CHECK UPPER FIRST**
-            if let Some(upper) = contains_zero_byte_reversed(v ^ repeated_x) {
-                let zero_byte_pos = find_swar_last_index!(upper);
-                return Some(offset - CHUNK_BYTES + zero_byte_pos);
-            }
+        let v = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
 
-            if let Some(lower) = contains_zero_byte_reversed(u ^ repeated_x) {
-                let zero_byte_pos = find_swar_last_index!(lower);
-
-                return Some(offset - 2 * CHUNK_BYTES + zero_byte_pos);
-            }
+        // Break if there is a matching byte.
+        // **CHECK UPPER FIRST**
+        let xorred_upper = v ^ repeated_x;
+        // use the original SWAR (fewer instructions) to check for zero byte
+        if contains_zero_byte(xorred_upper).is_some() {
+            // Then apply alternative SWAR (guaranteed to be nonzero)
+            // We need to use an alternative SWAR method because HASZERO propagates 0xFF right(or left, depending on endianness) wise after match
+            // this could be done with a byte swap but thats 1 (or more, depending on arch) instructions
+            // use this only when a match is FOUND
+            let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_upper) };
+            return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
-        offset -= 2 * CHUNK_BYTES;
+        let xorred_lower = u ^ repeated_x;
+        if contains_zero_byte(xorred_lower).is_some() {
+            // TODO, TIDY UP SAFETY? use nonzerousize etc.
+            // same stuff as above otherwise
+            let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_lower) };
+
+            return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
+        }
+
+        offset -= 2 * USIZE_BYTES;
     }
 
     unsafe { rposition_byte_len(start, offset, x) }
