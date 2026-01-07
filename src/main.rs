@@ -59,6 +59,7 @@ n = (32 - nlz(~y & (y - 1))) >> 3
 #[inline]
 pub const fn find_last_char_in_word(c: u8, input: usize) -> Option<usize> {
     let x = input ^ repeat_u8(c);
+
     let y = contains_zero_byte_reversed(x);
 
     match y {

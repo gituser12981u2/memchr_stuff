@@ -2,8 +2,7 @@
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 #![allow(clippy::undocumented_unsafe_blocks)]
 #![allow(clippy::empty_line_after_doc_comments)]
-#![allow(dead_code)]
-#![allow(warnings)]
+//#![allow(warnings)]
 
 // I was reading through the std library for random silly things and I found this , https://doc.rust-lang.org/src/core/slice/memchr.rs.html#111-161
 // this essentially provides a more rigorous foundation to my SWAR technique.
@@ -26,17 +25,9 @@
 use crate::num::repeat_u8;
 
 use crate::{find_swar_index, find_swar_last_index};
-use core::num::NonZeroU64;
-#[inline]
-const fn repeat_u64(byte: u8) -> u64 {
-    u64::from_ne_bytes([byte; size_of::<u64>()])
-}
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
-
-const LO_U64: u64 = repeat_u64(0x01);
-const HI_U64: u64 = repeat_u64(0x80);
 
 const USIZE_BYTES: usize = size_of::<usize>();
 
@@ -52,7 +43,8 @@ use core::num::NonZeroUsize;
 #[inline]
 #[must_use]
 // ! OPTIMIZATION !
-pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
+pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> /* MINIMUM ADDRESSABLE SIZE =1 BYTE YAY*/
+{
     NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE)
 }
 
@@ -61,7 +53,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
     let mut i = len;
     while i != 0 {
         i -= 1;
-        if base.add(i).read() == needle {
+        if unsafe { base.add(i).read() } == needle {
             return Some(i);
         }
     }
@@ -85,7 +77,7 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
 
     // FIXME(const-hack): Replace with `text.iter().pos(|c| *c == x)`.
     while i < text.len() {
-        if unsafe { text[i] == x } {
+        if text[i] == x {
             return Some(i);
         }
 
@@ -131,6 +123,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 
             // break if there is a matching byte
             // ! OPTIMIZATION !
+            // check this branch first (lower has precedence, obvs)
             if let Some(lower) = contains_zero_byte(u ^ repeated_x) {
                 return Some(offset + find_swar_index!(lower));
             }
@@ -160,7 +153,7 @@ pub const fn contains_zero_byte_reversed(x: usize) -> Option<NonZeroUsize> {
     const MASK: usize = repeat_u8(0x7F);
 
     let y = (x & MASK).wrapping_add(MASK);
-    return NonZeroUsize::new(!(y | x | MASK));
+    NonZeroUsize::new(!(y | x | MASK))
 }
 
 /// Returns the last index matching the byte `x` in `text`.
@@ -201,7 +194,6 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
     let repeated_x = repeat_u8(x);
     const CHUNK_BYTES: usize = size_of::<Chunk>();
-    const BYTES_MINUS1: usize = CHUNK_BYTES - 1;
 
     while offset > min_aligned_offset {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
@@ -212,7 +204,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             let v = ptr.add(offset - CHUNK_BYTES).cast::<usize>().read();
 
             // Break if there is a matching byte.
-
+            // **CHECK UPPER FIRST**
             if let Some(upper) = contains_zero_byte_reversed(v ^ repeated_x) {
                 let zero_byte_pos = find_swar_last_index!(upper);
                 return Some(offset - CHUNK_BYTES + zero_byte_pos);

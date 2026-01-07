@@ -2,6 +2,7 @@ use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use memchr_stuff::memchr_new::memrchr;
 use memchr_stuff::memchr_old::memrchr_old;
+use std::time::Duration;
 
 fn bench_memrchr(c: &mut Criterion) {
     let mut group = c.benchmark_group("memrchr (REVERSED)");
@@ -61,5 +62,12 @@ fn bench_memchr(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_memrchr, bench_memchr);
+criterion_group!(
+    name = benches;
+    config = Criterion::default()
+        .warm_up_time(Duration::from_secs(3))
+        .measurement_time(Duration::from_secs(10))
+        .sample_size(200);
+    targets = bench_memrchr, bench_memchr
+);
 criterion_main!(benches);
