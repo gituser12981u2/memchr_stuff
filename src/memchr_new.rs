@@ -17,6 +17,35 @@ const fn do_fast_swar(x: usize) -> usize {
     x.wrapping_sub(LO_USIZE) & !x & HI_USIZE
 }
 
+/* ASSEMBLY OUTPUT FOR ABOVE
+      movabs rcx, -72340172838076673
+        add rcx, rdi
+        not rdi
+        movabs rax, -9187201950435737472
+        and rax, rdi
+        and rax, rcx
+        ret
+
+*/
+
+/*
+#[inline(never)]
+pub const fn do_slower_swar(x: usize) -> usize {
+    !(x.wrapping_add(INVERTED_HIGH) | x) & HI_USIZE
+}
+*/
+/*
+
+   movabs rcx, 9187201950435737471
+        add rcx, rdi
+        or rcx, rdi
+        not rcx
+        movabs rax, -9187201950435737472
+        and rax, rcx
+        ret
+
+*/
+
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
 const INVERTED_HIGH: usize = !HI_USIZE;
@@ -118,63 +147,16 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     memchr_naive(x, slice).map(|i| offset + i)
 }
 
-/*
-http://www.icodeguru.com/Embedded/Hacker%27s-Delight/043.htm
-
-
-
-Figure 6-2 Find leftmost 0-byte, branch-free code.
-
-int zbytel(unsigned x) {
-
-   unsigned y;
-
-   int n;
-
-                        ?/ Original byte: 00 80 other
-
-   y = (x & 0x7F7F7F7F) + 0x7F7F7F7F;   // 7F 7F 1xxxxxxx
-
-   y = ~(y | x | 0x7F7F7F7F);           // 80 00 00000000
-
-   n = nlz(y) >> 3;             // n = 0 ... 4, 4 if x
-
-   return n;                  ?// has no 0-byte.
-
-}
-
-The position of the rightmost 0-byte is given by the number of trailing 0's in the final value of y computed above, divided by 8 (with fraction discarded). Using the expression for computing the number of trailing 0's by means of the number of leading zeros instruction (see Section 5- 4, "Counting Trailing 0's," on page 84), this can be computed by replacing the assignment to n in the procedure above with:
-
-n = (32 - nlz(~y & (y - 1))) >> 3;
-
-This is a 12-instruction solution, if the machine has nor and and not.
-
-In most situations on PowerPC, incidentally, a procedure to find the rightmost 0-byte would not be needed. Instead, the words can be loaded with the load word byte-reverse instruction (lwbrx).
-
-The procedure of Figure 6-2 is more valuable on a 64-bit machine than on a 32-bit one, because on a 64-bit machine the procedure (with obvious modifications) requires about the same number of instructions (seven or ten, depending upon how the constant is generated), whereas the technique of Figure 6-1 requires 23 instructions worst case.
-
-*/
 #[inline]
 #[must_use]
-// TODO TIDY UP SAFETY (write up a safety proof for this)
-// * ESSENTIALLY, if fast SWAR!=0 then this will also not be 0, different formulations
-// of the same logic. only difference is this takes more instructions (due to right/left propagation in HASZERO)
-const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
-    debug_assert!(do_fast_swar(x) != 0);
-    let y = (x & INVERTED_HIGH).wrapping_add(INVERTED_HIGH);
-    // essentially, this algorithm can only be used after the SWAR algorithm has been done on the XOR'ed usize previously,
-    // TODO write verbose safety stuff for PR
-    // Utilise NonZeroUsize solely for intrinsic benefit (cttz/ctlz)_nonzero
-    let ans = unsafe { NonZeroUsize::new_unchecked(!(y | x | INVERTED_HIGH)) };
-    #[cfg(target_endian = "little")]
-    {
-        (ans.leading_zeros() >> 3) as usize
-    }
-    #[cfg(target_endian = "big")]
-    {
-        (ans.trailing_zeros() >> 3) as usize
-    }
-    // use USIZE_BYTES-1 - result of <this> to find the position
+// * ESSENTIALLY, this stops borrows propagating leftwards
+const fn find_zero_byte_reversed(x: usize) -> Option<NonZeroUsize> {
+    // Convert the non-zero-byte mask into a zero-byte mask (0x80 set in each
+    // byte that is zero). Sa]
+    //TODO WRITE UP ALGORITHM
+    let zero_mask = !(x.wrapping_add(INVERTED_HIGH) | x) & HI_USIZE;
+    // Utilise NonZeroUsize solely for intrinsic benefit (cttz/ctlz)_nonzero.
+    NonZeroUsize::new(zero_mask)
 }
 
 #[inline]
@@ -257,22 +239,23 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // **CHECK UPPER FIRST**
         let xorred_upper = upper ^ repeated_x; //XOR to turn the matching bytes to NUL
         // use the original SWAR (fewer instructions) to check for zero byte
-        if do_fast_swar(xorred_upper) != 0 {
-            // Then apply alternative SWAR (guaranteed to be nonzero)
-            // We need to use an alternative SWAR method because HASZERO propagates 0xFF right(or left, depending on endianness) wise after match
-            // this could be done with a byte swap but thats 1 (or more, depending on arch) instructions
-            // use this only when a match is FOUND
-            // SAFETY: GUARANTEED NON ZERO
-            let zero_byte_pos = USIZE_BYTES - 1 - unsafe { find_zero_byte_reversed(xorred_upper) };
+        if let Some(valid) = find_zero_byte_reversed(xorred_upper) {
+            #[cfg(target_endian = "little")]
+            let zero_byte_pos = USIZE_BYTES - 1 - (valid.leading_zeros() >> 3) as usize;
+            #[cfg(target_endian = "big")]
+            let zero_byte_pos = USIZE_BYTES - 1 - (valid.trailing_zeros() >> 3) as usize;
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
         let xorred_lower = lower ^ repeated_x;
-        if do_fast_swar(xorred_lower) != 0 {
+        if let Some(valid) = find_zero_byte_reversed(xorred_lower) {
             // TODO, TIDY UP SAFETY? use nonzerousize etc.
             // same stuff as above otherwise
             // SAFETY: GUARANTEED NON ZERO
-            let zero_byte_pos = USIZE_BYTES - 1 - unsafe { find_zero_byte_reversed(xorred_lower) };
+            #[cfg(target_endian = "little")]
+            let zero_byte_pos = USIZE_BYTES - 1 - (valid.leading_zeros() >> 3) as usize;
+            #[cfg(target_endian = "big")]
+            let zero_byte_pos = USIZE_BYTES - 1 - (valid.trailing_zeros() >> 3) as usize;
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
