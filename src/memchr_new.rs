@@ -8,33 +8,12 @@
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8;
 
+// USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
 
-//optionally remove if wanted, not necessary, just cleaner
-macro_rules! find_swar_last_index {
-    ($num:expr) => {{
-        #[cfg(target_endian = "big")]
-        {
-            (USIZE_BYTES - 1 - (($num.trailing_zeros()) >> 3) as usize)
-        }
-        #[cfg(target_endian = "little")]
-        {
-            (USIZE_BYTES - 1 - (($num.leading_zeros()) >> 3) as usize)
-        }
-    }};
-}
-// as above
-macro_rules! find_swar_index {
-    ($num:expr) => {{
-        #[cfg(target_endian = "big")]
-        {
-            ($num.leading_zeros() >> 3) as usize
-        }
-        #[cfg(target_endian = "little")]
-        {
-            ($num.trailing_zeros() >> 3) as usize
-        }
-    }};
+#[inline]
+const fn do_fast_swar(x: usize) -> usize {
+    x.wrapping_sub(LO_USIZE) & !x & HI_USIZE
 }
 
 const LO_USIZE: usize = repeat_u8(0x01);
@@ -42,34 +21,6 @@ const HI_USIZE: usize = repeat_u8(0x80);
 const INVERTED_HIGH: usize = !HI_USIZE;
 const _: () = const { assert!(INVERTED_HIGH == repeat_u8(0x7F), "should be equal") };
 const USIZE_BYTES: usize = size_of::<usize>();
-
-/// Returns `true` if `x` contains any zero byte.
-///
-/// From *Matters Computational*, J. Arndt:
-///
-/// "The idea is to subtract one from each of the bytes and then look for
-/// bytes where the borrow propagated all the way to the most significant
-/// bit."
-#[inline]
-#[must_use]
-// ! OPTIMIZATION !
-pub const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> /* MINIMUM ADDRESSABLE SIZE =1 BYTE YAY*/
-{
-    NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE)
-}
-
-#[inline]
-// Check assembly to see if we need this Adrian, you did it lol.
-const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
-    let mut i = len;
-    while i != 0 {
-        i -= 1;
-        if unsafe { base.add(i).read() } == needle {
-            return Some(i);
-        }
-    }
-    None
-}
 
 #[inline]
 #[must_use]
@@ -118,7 +69,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 
     if offset > 0 {
         offset = offset.min(len);
-        let slice = unsafe { &text.get_unchecked(..offset) };
+        let slice = unsafe { text.get_unchecked(..offset) };
         if let Some(index) = memchr_naive(x, slice) {
             return Some(index);
         }
@@ -136,11 +87,20 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // break if there is a matching byte
             // ! OPTIMIZATION !
             // check this branch first (lower has precedence, obvs)
-            if let Some(lower) = contains_zero_byte(u ^ repeated_x) {
-                return Some(offset + find_swar_index!(lower));
+            // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
+            if let Some(lower) = NonZeroUsize::new(do_fast_swar(u ^ repeated_x)) {
+                #[cfg(target_endian = "little")]
+                let byte_pos = (lower.trailing_zeros() >> 3) as usize;
+                #[cfg(target_endian = "big")]
+                let byte_pos = (lower.leading_zeros() >> 3) as usize;
+                return Some(offset + byte_pos);
             }
-            if let Some(upper) = contains_zero_byte(v ^ repeated_x) {
-                return Some(offset + USIZE_BYTES + find_swar_index!(upper));
+            if let Some(upper) = NonZeroUsize::new(do_fast_swar(v ^ repeated_x)) {
+                #[cfg(target_endian = "little")]
+                let byte_pos = (upper.trailing_zeros() >> 3) as usize;
+                #[cfg(target_endian = "big")]
+                let byte_pos = (upper.leading_zeros() >> 3) as usize;
+                return Some(offset + USIZE_BYTES + byte_pos);
             }
         }
 
@@ -195,82 +155,125 @@ The procedure of Figure 6-2 is more valuable on a 64-bit machine than on a 32-bi
 #[inline]
 #[must_use]
 // TODO TIDY UP SAFETY (write up a safety proof for this)
+// * ESSENTIALLY, if fast SWAR!=0 then this will also not be 0, different formulations
+// of the same logic. only difference is this takes more instructions (due to right/left propagation in HASZERO)
 const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
-    debug_assert!(contains_zero_byte(x).is_some(), "");
+    debug_assert!(do_fast_swar(x) != 0);
     let y = (x & INVERTED_HIGH).wrapping_add(INVERTED_HIGH);
     // essentially, this algorithm can only be used after the SWAR algorithm has been done on the XOR'ed usize previously,
     //
     let ans = unsafe { NonZeroUsize::new_unchecked(!(y | x | INVERTED_HIGH)) };
-    find_swar_last_index!(ans)
+    #[cfg(target_endian = "little")]
+    {
+        (ans.leading_zeros() >> 3) as usize
+    }
+    #[cfg(target_endian = "big")]
+    {
+        (ans.trailing_zeros() >> 3) as usize
+    }
+}
+
+#[inline]
+// Check assembly to see if we need this Adrian, you did it lol.
+const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
+    let mut i = len;
+    while i != 0 {
+        i -= 1;
+        if unsafe { base.add(i).read() } == needle {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline]
+#[inline(never)]
+#[allow(clippy::cast_ptr_alignment)] //burntsushi wrote this so...
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
+
     //
+
     // Split `text` in three parts:
+
     // - unaligned tail, after the last word aligned address in text,
+
     // - body, scanned by 2 words at a time,
+
     // - the first remaining bytes, < 2 word size.
+
     let len = text.len();
+
     let ptr = text.as_ptr();
 
     let (min_aligned_offset, max_aligned_offset) = {
         // We call this just to obtain the length of the prefix and suffix.
+
         // In the middle we always process two chunks at once.
+
         // SAFETY: transmuting `[u8]` to `[usize]` is safe except for size differences
+
         // which are handled by `align_to`.
+
         let (prefix, _, suffix) = unsafe { text.align_to::<(usize, usize)>() };
+
         (prefix.len(), len - suffix.len())
     };
 
     let mut offset = max_aligned_offset;
 
+    // SAFETY: trivially within bounds
     let start = text.as_ptr();
     let tail_len = len - offset; // tail is [offset, len)
     if let Some(i) = unsafe { rposition_byte_len(start.add(offset), tail_len, x) } {
         return Some(offset + i);
     }
 
+    // Search the body of the text, make sure we don't cross min_aligned_offset.
+
+    // offset is always aligned, so just testing `>` is sufficient and avoids possible
+
+    // overflow.
+
     let repeated_x = repeat_u8(x);
 
     while offset > min_aligned_offset {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
-
+        // SAFETY: as above
         let u = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
-
+        // SAFETY: as above
         let v = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
 
         // Break if there is a matching byte.
         // **CHECK UPPER FIRST**
         let xorred_upper = v ^ repeated_x;
-        // use the original SWAR (~2 fewer instructions) to check for zero byte
-        // this is important as its the main bit being executed
-        if contains_zero_byte(xorred_upper).is_some() {
+        // use the original SWAR (fewer instructions) to check for zero byte
+        if do_fast_swar(xorred_upper) != 0 {
             // Then apply alternative SWAR (guaranteed to be nonzero)
             // We need to use an alternative SWAR method because HASZERO propagates 0xFF right(or left, depending on endianness) wise after match
             // this could be done with a byte swap but thats 1 (or more, depending on arch) instructions
             // use this only when a match is FOUND
-            let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_upper) };
-            //todo check asm to see if constant folding is done! (should be due to inlining?)
+            // SAFETY: GUARANTEED NON ZERO
+            let zero_byte_pos = USIZE_BYTES - 1 - unsafe { find_zero_byte_reversed(xorred_upper) };
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
         let xorred_lower = u ^ repeated_x;
-        if contains_zero_byte(xorred_lower).is_some() {
-            // TODO, TIDY UP SAFETY
+        if do_fast_swar(xorred_lower) != 0 {
+            // TODO, TIDY UP SAFETY? use nonzerousize etc.
             // same stuff as above otherwise
-            let zero_byte_pos = unsafe { find_zero_byte_reversed(xorred_lower) };
+            // SAFETY: GUARANTEED NON ZERO
+            let zero_byte_pos = USIZE_BYTES - 1 - unsafe { find_zero_byte_reversed(xorred_lower) };
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
 
         offset -= 2 * USIZE_BYTES;
     }
-
+    // SAFETY: trivially within bounds
+    // Find the byte before the point the body loop stopped.
     unsafe { rposition_byte_len(start, offset, x) }
 }

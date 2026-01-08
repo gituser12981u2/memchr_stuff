@@ -54,6 +54,7 @@ mod tests {
     b"/proc/2682450/task/2682451/fdinfo/0",
     b"/tmp/llvm-project/clang/test/CodeGen/mcount.c",
     b"/usr/lib/go/src/cmd/go/internal/modfetch/toolchain.go",
+    b"/usZr/Zlib/go/src/cmd/go/internal/modfetch/toolchain.go",
 ];
 
     fn test_memchr(search: u8, sl: &[u8]) {
