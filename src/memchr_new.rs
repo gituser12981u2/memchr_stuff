@@ -3,6 +3,7 @@
 #![allow(clippy::undocumented_unsafe_blocks)]
 #![allow(clippy::empty_line_after_doc_comments)]
 
+// TODO? test on 32bit targets! (ok fuck 16 i dont think  rust even supports 16)
 // Original implementation taken from rust-memchr.
 
 /// TODO: change to work with rust std.
@@ -22,7 +23,7 @@ const INVERTED_HIGH: usize = !HI_USIZE;
 const _: () = const { assert!(INVERTED_HIGH == repeat_u8(0x7F), "should be equal") };
 const USIZE_BYTES: usize = size_of::<usize>();
 
-#[inline]
+#[inline(never)]
 #[must_use]
 pub fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     // Fast path for small slices.
@@ -88,6 +89,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // ! OPTIMIZATION !
             // check this branch first (lower has precedence, obvs)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
+            // then  XOR to turn the matching bytes to NUL
             if let Some(lower) = NonZeroUsize::new(do_fast_swar(u ^ repeated_x)) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (lower.trailing_zeros() >> 3) as usize;
@@ -161,7 +163,8 @@ const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
     debug_assert!(do_fast_swar(x) != 0);
     let y = (x & INVERTED_HIGH).wrapping_add(INVERTED_HIGH);
     // essentially, this algorithm can only be used after the SWAR algorithm has been done on the XOR'ed usize previously,
-    //
+    // TODO write verbose safety stuff for PR
+    // Utilise NonZeroUsize solely for intrinsic benefit (cttz/ctlz)_nonzero
     let ans = unsafe { NonZeroUsize::new_unchecked(!(y | x | INVERTED_HIGH)) };
     #[cfg(target_endian = "little")]
     {
@@ -171,14 +174,17 @@ const unsafe fn find_zero_byte_reversed(x: usize) -> usize {
     {
         (ans.trailing_zeros() >> 3) as usize
     }
+    // use USIZE_BYTES-1 - result of <this> to find the position
 }
 
 #[inline]
 // Check assembly to see if we need this Adrian, you did it lol.
+// 1 fewer instruction using this, need to look at more.
 const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
     let mut i = len;
     while i != 0 {
         i -= 1;
+        // TODO write verbose safety stuff
         if unsafe { base.add(i).read() } == needle {
             return Some(i);
         }
@@ -243,13 +249,13 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
         // SAFETY: as above
-        let u = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
+        let lower = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
         // SAFETY: as above
-        let v = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
+        let upper = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
 
         // Break if there is a matching byte.
         // **CHECK UPPER FIRST**
-        let xorred_upper = v ^ repeated_x;
+        let xorred_upper = upper ^ repeated_x; //XOR to turn the matching bytes to NUL
         // use the original SWAR (fewer instructions) to check for zero byte
         if do_fast_swar(xorred_upper) != 0 {
             // Then apply alternative SWAR (guaranteed to be nonzero)
@@ -261,7 +267,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
-        let xorred_lower = u ^ repeated_x;
+        let xorred_lower = lower ^ repeated_x;
         if do_fast_swar(xorred_lower) != 0 {
             // TODO, TIDY UP SAFETY? use nonzerousize etc.
             // same stuff as above otherwise
