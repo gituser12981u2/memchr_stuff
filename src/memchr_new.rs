@@ -52,7 +52,7 @@ const INVERTED_HIGH: usize = !HI_USIZE;
 const _: () = const { assert!(INVERTED_HIGH == repeat_u8(0x7F), "should be equal") };
 const USIZE_BYTES: usize = size_of::<usize>();
 
-#[inline(never)]
+#[inline]
 #[must_use]
 pub fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     // Fast path for small slices.
@@ -177,7 +177,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline(never)]
+#[inline]
 #[allow(clippy::cast_ptr_alignment)] //burntsushi wrote this so...
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.

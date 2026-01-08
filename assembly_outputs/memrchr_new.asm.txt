@@ -30,39 +30,31 @@ memchr_stuff::memchr_new::memrchr:
 	ret
 .LBB1_2:
 	movabs rax, -9187201950435737472
-	movabs rdx, 72340172838076672
+	movabs rdx, 9187201950435737471
 	movzx r10d, dil
-	lea r9, [rdx + 1]
+	movabs r9, 72340172838076673
 	imul r9, r10
 	.p2align	4
 .LBB1_3:
 	cmp rcx, r8
 	jbe .LBB1_4
-	mov r10, qword ptr [rsi + rcx - 8]
-	xor r10, r9
-	mov r11, rdx
-	sub r11, r10
-	or r11, r10
-	not r11
-	test rax, r11
+	mov r11, qword ptr [rsi + rcx - 8]
+	xor r11, r9
+	lea r10, [r11 + rdx]
+	or r10, r11
+	and r10, rax
+	cmp r10, rax
 	jne .LBB1_12
-	mov r10, qword ptr [rsi + rcx - 16]
-	xor r10, r9
+	mov r11, qword ptr [rsi + rcx - 16]
+	xor r11, r9
 	add rcx, -16
-	mov r11, rdx
-	sub r11, r10
-	or r11, r10
-	not r11
-	test rax, r11
+	lea r10, [r11 + rdx]
+	or r10, r11
+	and r10, rax
+	cmp r10, rax
 	je .LBB1_3
-	movabs rdx, 9187201950435737471
-	mov rsi, r10
-	and rsi, rdx
-	add rsi, rdx
-	or rsi, r10
-	not rsi
-	and rsi, rax
-	bsr rdx, rsi
+	xor r10, rax
+	bsr rdx, r10
 	xor edx, 56
 	shr edx, 3
 	xor rdx, 7
@@ -81,14 +73,8 @@ memchr_stuff::memchr_new::memrchr:
 	jne .LBB1_5
 	jmp .LBB1_9
 .LBB1_12:
-	movabs rdx, 9187201950435737471
-	mov rsi, r10
-	and rsi, rdx
-	add rsi, rdx
-	or rsi, r10
-	not rsi
-	and rsi, rax
-	bsr rax, rsi
+	xor r10, rax
+	bsr rax, r10
 	xor eax, 56
 	shr eax, 3
 	xor rax, 7
