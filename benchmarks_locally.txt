@@ -1,0 +1,149 @@
+Criterion summary from: target/criterion
+
+OLD vs NEW (mean time; lower is better)
+group              case                                            old(ns)    new(ns)   speedup   delta%
+memchr             absent/Aligned/1024                             45.7096    46.4764     0.984     1.68
+memchr             absent/Aligned/16                                5.7235     5.7223     1.000    -0.02
+memchr             absent/Aligned/256                              14.2298    13.7816     1.033    -3.15
+memchr             absent/Aligned/64                                7.1131     6.6475     1.070    -6.55
+memchr             absent/Aligned/65536                          2767.7778  2759.1118     1.003    -0.31
+memchr             absent/Aligned/8192                            329.8059   349.3567     0.944     5.93
+memchr             absent/Unaligned/1031                           47.8731    51.1337     0.936     6.81
+memchr             absent/Unaligned/23                              6.4104     6.4070     1.001    -0.05
+memchr             absent/Unaligned/263                            14.3712    14.8949     0.965     3.64
+memchr             absent/Unaligned/65543                        3539.3373  3200.6828     1.106    -9.57
+memchr             absent/Unaligned/71                              8.3140     7.5833     1.096    -8.79
+memchr             absent/Unaligned/8199                          351.3040   357.6900     0.982     1.82
+memchr             end/Aligned/1024                                48.5317    47.2338     1.027    -2.67
+memchr             end/Aligned/16                                   7.8885     5.7244     1.378   -27.43
+memchr             end/Aligned/256                                 17.9896    13.7687     1.307   -23.46
+memchr             end/Aligned/64                                   9.8619     6.6353     1.486   -32.72
+memchr             end/Aligned/65536                             6542.3918  2905.6744     2.252   -55.59
+memchr             end/Aligned/8192                               331.0135   369.6982     0.895    11.69
+memchr             end/Unaligned/1031                              46.4520    52.3541     0.887    12.71
+memchr             end/Unaligned/23                                 6.4941     6.2243     1.043    -4.15
+memchr             end/Unaligned/263                               14.9689    14.2930     1.047    -4.52
+memchr             end/Unaligned/65543                           2821.8169  2783.1424     1.014    -1.37
+memchr             end/Unaligned/71                                 7.6567     7.5702     1.011    -1.13
+memchr             end/Unaligned/8199                             354.2465   349.2240     1.014    -1.42
+memchr             middle/Aligned/1024                             27.7445    24.5962     1.128   -11.35
+memchr             middle/Aligned/16                                6.4049     5.7109     1.122   -10.84
+memchr             middle/Aligned/256                               9.8638     9.0443     1.091    -8.31
+memchr             middle/Aligned/64                                6.6696     5.9445     1.122   -10.87
+memchr             middle/Aligned/65536                          1387.4439  1346.8948     1.030    -2.92
+memchr             middle/Aligned/8192                            183.0325   168.6925     1.085    -7.83
+memchr             middle/Unaligned/1031                           26.0361    24.5742     1.059    -5.61
+memchr             middle/Unaligned/23                              6.7734     5.7311     1.182   -15.39
+memchr             middle/Unaligned/263                            10.4220     9.7861     1.065    -6.10
+memchr             middle/Unaligned/65543                        1406.6931  1340.3533     1.049    -4.72
+memchr             middle/Unaligned/71                              7.1144     5.9640     1.193   -16.17
+memchr             middle/Unaligned/8199                          182.1754   175.9978     1.035    -3.39
+memchr             multiple/Aligned/1024                           14.4943    13.2754     1.092    -8.41
+memchr             multiple/Aligned/16                              6.1882     5.4945     1.126   -11.21
+memchr             multiple/Aligned/256                             7.8506     6.8765     1.142   -12.41
+memchr             multiple/Aligned/64                              6.2185     5.4970     1.131   -11.60
+memchr             multiple/Aligned/65536                         693.7463   704.1572     0.985     1.50
+memchr             multiple/Aligned/8192                           86.4766    90.5605     0.955     4.72
+memchr             multiple/Unaligned/1031                         13.8111    14.4105     0.958     4.34
+memchr             multiple/Unaligned/23                            6.2271     5.4904     1.134   -11.83
+memchr             multiple/Unaligned/263                           7.5955     6.8850     1.103    -9.36
+memchr             multiple/Unaligned/65543                       739.2987   676.9813     1.092    -8.43
+memchr             multiple/Unaligned/71                            6.1836     5.5021     1.124   -11.02
+memchr             multiple/Unaligned/8199                         89.5366    96.4554     0.928     7.73
+memchr             random/Aligned/1024                              5.7238     5.0444     1.135   -11.87
+memchr             random/Aligned/16                                5.7261     5.4932     1.042    -4.07
+memchr             random/Aligned/256                               5.7236     5.0540     1.132   -11.70
+memchr             random/Aligned/64                                5.7314     5.0374     1.138   -12.11
+memchr             random/Aligned/65536                             6.4701     6.7481     0.959     4.30
+memchr             random/Aligned/8192                              5.7331     5.0384     1.138   -12.12
+memchr             random/Unaligned/1031                            5.7249     5.0403     1.136   -11.96
+memchr             random/Unaligned/23                              5.7235     5.4996     1.041    -3.91
+memchr             random/Unaligned/263                             5.7236     5.0340     1.137   -12.05
+memchr             random/Unaligned/65543                           5.7600     5.0532     1.140   -12.27
+memchr             random/Unaligned/71                              5.7278     5.0402     1.136   -12.00
+memchr             random/Unaligned/8199                            5.7247     5.0418     1.135   -11.93
+memchr             start/Aligned/1024                               5.7207     5.0628     1.130   -11.50
+memchr             start/Aligned/16                                 5.7153     5.4924     1.041    -3.90
+memchr             start/Aligned/256                                5.7229     5.0356     1.136   -12.01
+memchr             start/Aligned/64                                 5.7126     5.0428     1.133   -11.73
+memchr             start/Aligned/65536                              5.7226     5.0362     1.136   -11.99
+memchr             start/Aligned/8192                               5.7398     5.0372     1.140   -12.24
+memchr             start/Unaligned/1031                             5.7343     5.0369     1.138   -12.16
+memchr             start/Unaligned/23                               5.7355     5.5038     1.042    -4.04
+memchr             start/Unaligned/263                              5.7613     5.0484     1.141   -12.37
+memchr             start/Unaligned/65543                            5.7479     5.0405     1.140   -12.31
+memchr             start/Unaligned/71                               5.7258     5.0449     1.135   -11.89
+memchr             start/Unaligned/8199                             5.7247     5.0356     1.137   -12.04
+memrchr (REVERSED) absent/Aligned/1024                             53.8936    54.8306     0.983     1.74
+memrchr (REVERSED) absent/Aligned/16                                6.1820     5.9463     1.040    -3.81
+memrchr (REVERSED) absent/Aligned/256                              14.7642    13.8709     1.064    -6.05
+memrchr (REVERSED) absent/Aligned/64                                7.5397     7.3359     1.028    -2.70
+memrchr (REVERSED) absent/Aligned/65536                          2819.3737  2592.0997     1.088    -8.06
+memrchr (REVERSED) absent/Aligned/8192                            349.9369   335.0771     1.044    -4.25
+memrchr (REVERSED) absent/Unaligned/1031                           52.7814    54.0437     0.977     2.39
+memrchr (REVERSED) absent/Unaligned/23                              8.0493     7.1545     1.125   -11.12
+memrchr (REVERSED) absent/Unaligned/263                            16.7519    15.9640     1.049    -4.70
+memrchr (REVERSED) absent/Unaligned/65543                        3073.2404  2607.0920     1.179   -15.17
+memrchr (REVERSED) absent/Unaligned/71                              9.0818     8.8148     1.030    -2.94
+memrchr (REVERSED) absent/Unaligned/8199                          331.6502   349.8504     0.948     5.49
+memrchr (REVERSED) end/Aligned/1024                                 6.5177     5.7307     1.137   -12.08
+memrchr (REVERSED) end/Aligned/16                                   6.5500     5.7852     1.132   -11.68
+memrchr (REVERSED) end/Aligned/256                                  6.4537     7.7891     0.829    20.69
+memrchr (REVERSED) end/Aligned/64                                   6.4087     5.7234     1.120   -10.69
+memrchr (REVERSED) end/Aligned/65536                                6.4466     5.7287     1.125   -11.14
+memrchr (REVERSED) end/Aligned/8192                                 6.4104     5.7225     1.120   -10.73
+memrchr (REVERSED) end/Unaligned/1031                               5.7292     5.0407     1.137   -12.02
+memrchr (REVERSED) end/Unaligned/23                                 5.7303     5.4976     1.042    -4.06
+memrchr (REVERSED) end/Unaligned/263                                5.7843     5.0803     1.139   -12.17
+memrchr (REVERSED) end/Unaligned/65543                              5.7257     5.0254     1.139   -12.23
+memrchr (REVERSED) end/Unaligned/71                                 5.7276     5.0438     1.136   -11.94
+memrchr (REVERSED) end/Unaligned/8199                               5.7293     5.0361     1.138   -12.10
+memrchr (REVERSED) middle/Aligned/1024                             29.3856    28.3516     1.036    -3.52
+memrchr (REVERSED) middle/Aligned/16                               16.7702     5.7926     2.895   -65.46
+memrchr (REVERSED) middle/Aligned/256                              12.5483    10.1244     1.239   -19.32
+memrchr (REVERSED) middle/Aligned/64                                9.7392     6.4122     1.519   -34.16
+memrchr (REVERSED) middle/Aligned/65536                          1400.1796  1366.5410     1.025    -2.40
+memrchr (REVERSED) middle/Aligned/8192                            187.4986   180.1545     1.041    -3.92
+memrchr (REVERSED) middle/Unaligned/1031                           29.8472    30.8244     0.968     3.27
+memrchr (REVERSED) middle/Unaligned/23                              8.4689     7.0925     1.194   -16.25
+memrchr (REVERSED) middle/Unaligned/263                            14.7074    11.4837     1.281   -21.92
+memrchr (REVERSED) middle/Unaligned/65543                        1384.4345  1452.2157     0.953     4.90
+memrchr (REVERSED) middle/Unaligned/71                             10.4671     7.5456     1.387   -27.91
+memrchr (REVERSED) middle/Unaligned/8199                          188.3803   179.0418     1.052    -4.96
+memrchr (REVERSED) multiple/Aligned/1024                            6.4123     5.7284     1.119   -10.67
+memrchr (REVERSED) multiple/Aligned/16                              6.4368     5.7372     1.122   -10.87
+memrchr (REVERSED) multiple/Aligned/256                             6.4270     5.7681     1.114   -10.25
+memrchr (REVERSED) multiple/Aligned/64                              6.4098     5.7201     1.121   -10.76
+memrchr (REVERSED) multiple/Aligned/65536                           6.4103     5.7203     1.121   -10.76
+memrchr (REVERSED) multiple/Aligned/8192                            6.4072     5.8135     1.102    -9.27
+memrchr (REVERSED) multiple/Unaligned/1031                          5.7214     5.0443     1.134   -11.83
+memrchr (REVERSED) multiple/Unaligned/23                            5.7354     5.5242     1.038    -3.68
+memrchr (REVERSED) multiple/Unaligned/263                           5.7225     5.0378     1.136   -11.97
+memrchr (REVERSED) multiple/Unaligned/65543                         5.7171     5.0393     1.134   -11.85
+memrchr (REVERSED) multiple/Unaligned/71                            5.7270     5.0475     1.135   -11.87
+memrchr (REVERSED) multiple/Unaligned/8199                          5.7251     5.0472     1.134   -11.84
+memrchr (REVERSED) random/Aligned/1024                              6.4130     5.7237     1.120   -10.75
+memrchr (REVERSED) random/Aligned/16                                6.5225     5.8481     1.115   -10.34
+memrchr (REVERSED) random/Aligned/256                               6.4751     5.7358     1.129   -11.42
+memrchr (REVERSED) random/Aligned/64                                6.4230     5.7243     1.122   -10.88
+memrchr (REVERSED) random/Aligned/65536                             6.4776     5.7188     1.133   -11.71
+memrchr (REVERSED) random/Aligned/8192                              6.4220     5.7237     1.122   -10.87
+memrchr (REVERSED) random/Unaligned/1031                            5.7258     5.0412     1.136   -11.96
+memrchr (REVERSED) random/Unaligned/23                              5.7272     5.5128     1.039    -3.74
+memrchr (REVERSED) random/Unaligned/263                            11.1166     5.1895     2.142   -53.32
+memrchr (REVERSED) random/Unaligned/65543                           5.7388     5.0256     1.142   -12.43
+memrchr (REVERSED) random/Unaligned/71                              5.7275     5.0461     1.135   -11.90
+memrchr (REVERSED) random/Unaligned/8199                            5.7258     5.0431     1.135   -11.92
+memrchr (REVERSED) start/Aligned/1024                              52.8828    47.8396     1.105    -9.54
+memrchr (REVERSED) start/Aligned/16                                 8.9316     5.9551     1.500   -33.32
+memrchr (REVERSED) start/Aligned/256                               18.4077    14.5315     1.267   -21.06
+memrchr (REVERSED) start/Aligned/64                                10.6935     7.3187     1.461   -31.56
+memrchr (REVERSED) start/Aligned/65536                           2898.2702  2768.3171     1.047    -4.48
+memrchr (REVERSED) start/Aligned/8192                             376.9371   379.7829     0.993     0.75
+memrchr (REVERSED) start/Unaligned/1031                            61.7125    52.5283     1.175   -14.88
+memrchr (REVERSED) start/Unaligned/23                              10.3793     7.1253     1.457   -31.35
+memrchr (REVERSED) start/Unaligned/263                             19.2601    15.3401     1.256   -20.35
+memrchr (REVERSED) start/Unaligned/65543                         2893.2316  2678.2413     1.080    -7.43
+memrchr (REVERSED) start/Unaligned/71                              13.7744     8.8933     1.549   -35.44
+memrchr (REVERSED) start/Unaligned/8199                           401.3189   357.2101     1.123   -10.99
+
