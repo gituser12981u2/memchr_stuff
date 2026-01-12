@@ -120,7 +120,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 }
 
 /*
-
+MY STUPID COMMENTARY
 
 FROM HACKERS DELIGHT
 
@@ -128,7 +128,19 @@ https://github.com/lancetw/ebook-1/blob/master/02_algorithm/Hacker%27s%20Delight
 
 WE DONT USE zbyter because it requires A LOT more instructions to check for 0 byte,
 
-I havent tested the mycro one, seems interesting though.
+I havent tested the mycro one, seems interesting though. I believe its meant for big endian however hence the comment
+
+"
+
+executes in only five instructions exclusive of loading the constants if the machine
+has the
+and not and
+number of trailing zeros instructions. It cannot be used to
+compute zbytel(
+x), because of a problem with borrows. It would be most useful for  <<-------------BORROW PROBLEM ffs
+finding the first 0-byte in a character string on a little-endian machine, or to simply test
+for a 0-byte (using only the assignment to y) on a machine of either endianness.
+"
 
 
 int zbytel(unsigned x) {
@@ -193,6 +205,11 @@ static char table[64] =
 x = (x & -x)*0x0450FBAF;
 return table[x >> 26];
 }
+
+
+**ALSO NOTE, NO POINT REIMPLEMENTING TRAILING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
+lacks the instruction and has to software emulate it. I trust LLVM maintainers to be a lot better than me at this!**
+
 
 */
 
