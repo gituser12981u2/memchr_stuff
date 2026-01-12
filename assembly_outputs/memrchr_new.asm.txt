@@ -25,12 +25,14 @@ memchr_stuff::memchr_new::memrchr:
 	cmp byte ptr [rsi + rax - 1], dil
 	mov rax, rdx
 	jne .LBB1_1
-.LBB1_9:
 	mov eax, 1
 	ret
 .LBB1_2:
-	movabs rax, -9187201950435737472
-	movabs rdx, 9187201950435737471
+	push rbx
+	.cfi_def_cfa_offset 16
+	.cfi_offset rbx, -16
+	movabs rax, -72340172838076673
+	movabs rdx, -9187201950435737472
 	movzx r10d, dil
 	movabs r9, 72340172838076673
 	imul r9, r10
@@ -38,30 +40,40 @@ memchr_stuff::memchr_new::memrchr:
 .LBB1_3:
 	cmp rcx, r8
 	jbe .LBB1_4
-	mov r11, qword ptr [rsi + rcx - 8]
-	xor r11, r9
-	lea r10, [r11 + rdx]
-	or r10, r11
-	and r10, rax
-	cmp r10, rax
+	mov r10, qword ptr [rsi + rcx - 8]
+	xor r10, r9
+	mov r11, r10
+	not r11
+	lea rbx, [r10 + rax]
+	and r11, rdx
+	and r11, rbx
 	jne .LBB1_12
-	mov r11, qword ptr [rsi + rcx - 16]
-	xor r11, r9
+	mov r10, qword ptr [rsi + rcx - 16]
+	xor r10, r9
 	add rcx, -16
-	lea r10, [r11 + rdx]
-	or r10, r11
-	and r10, rax
-	cmp r10, rax
+	mov r11, r10
+	not r11
+	lea rbx, [r10 + rax]
+	and r11, rdx
+	and r11, rbx
 	je .LBB1_3
-	xor r10, rax
-	bsr rdx, r10
+	shl r10, 7
+	not r10
+	and r11, r10
+	bsr rdx, r11
 	xor edx, 56
 	shr edx, 3
 	xor rdx, 7
 	add rdx, rcx
+.LBB1_15:
 	mov eax, 1
+	pop rbx
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
 	ret
 .LBB1_4:
+	.cfi_def_cfa_offset 16
+	.cfi_offset rbx, -16
 	xor eax, eax
 	mov rdx, rcx
 	.p2align	4
@@ -71,16 +83,26 @@ memchr_stuff::memchr_new::memrchr:
 	cmp byte ptr [rsi + rcx - 1], dil
 	mov rcx, rdx
 	jne .LBB1_5
-	jmp .LBB1_9
+	jmp .LBB1_15
 .LBB1_12:
-	xor r10, rax
-	bsr rax, r10
+	shl r10, 7
+	not r10
+	and r11, r10
+	bsr rax, r11
 	xor eax, 56
 	shr eax, 3
 	xor rax, 7
 	lea rdx, [rax + rcx]
 	add rdx, -8
 	mov eax, 1
+	pop rbx
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
 	ret
 .LBB1_6:
+	.cfi_def_cfa_offset 16
+	.cfi_offset rbx, -16
+	pop rbx
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
 	ret

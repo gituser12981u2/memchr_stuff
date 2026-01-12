@@ -11,45 +11,17 @@ use crate::num::repeat_u8;
 
 // USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
+//https://doc.rust-lang.org/src/core/num/nonzero.rs.html#599
+//https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
+//https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
 
 #[inline]
-const fn do_fast_swar(x: usize) -> usize {
-    x.wrapping_sub(LO_USIZE) & !x & HI_USIZE
+pub(crate) const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE)
 }
-
-/* ASSEMBLY OUTPUT FOR ABOVE
-      movabs rcx, -72340172838076673
-        add rcx, rdi
-        not rdi
-        movabs rax, -9187201950435737472
-        and rax, rdi
-        and rax, rcx
-        ret
-
-*/
-
-/*
-#[inline(never)]
-pub const fn do_slower_swar(x: usize) -> usize {
-    !(x.wrapping_add(INVERTED_HIGH) | x) & HI_USIZE
-}
-*/
-/*
-
-   movabs rcx, 9187201950435737471
-        add rcx, rdi
-        or rcx, rdi
-        not rcx
-        movabs rax, -9187201950435737472
-        and rax, rcx
-        ret
-
-*/
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
-const INVERTED_HIGH: usize = !HI_USIZE;
-const _: () = const { assert!(INVERTED_HIGH == repeat_u8(0x7F), "should be equal") };
 const USIZE_BYTES: usize = size_of::<usize>();
 
 #[inline]
@@ -119,14 +91,14 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // check this branch first (lower has precedence, obvs)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL
-            if let Some(lower) = NonZeroUsize::new(do_fast_swar(u ^ repeated_x)) {
+            if let Some(lower) = contains_zero_byte(u ^ repeated_x) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (lower.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
                 let byte_pos = (lower.leading_zeros() >> 3) as usize;
                 return Some(offset + byte_pos);
             }
-            if let Some(upper) = NonZeroUsize::new(do_fast_swar(v ^ repeated_x)) {
+            if let Some(upper) = contains_zero_byte(v ^ repeated_x) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (upper.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
@@ -149,14 +121,31 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 
 #[inline]
 #[must_use]
-// * ESSENTIALLY, this stops borrows propagating leftwards
-const fn find_zero_byte_reversed(x: usize) -> Option<NonZeroUsize> {
-    // Convert the non-zero-byte mask into a zero-byte mask (0x80 set in each
-    // byte that is zero). Sa]
-    //TODO WRITE UP ALGORITHM
-    let zero_mask = !(x.wrapping_add(INVERTED_HIGH) | x) & HI_USIZE;
-    // Utilise NonZeroUsize solely for intrinsic benefit (cttz/ctlz)_nonzero.
-    NonZeroUsize::new(zero_mask)
+pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
+    // Hybrid approach:
+    // 1) Use the classic SWAR test as a cheap early-out for the common case
+    //    where there are no zero bytes.
+    // 2) If the classic test indicates a possible match, compute a borrow/carry-
+    //    safe mask that cannot produce cross-byte false positives. This matters
+    //    for reverse search where we pick the *last* match.
+
+    // Classic SWAR: may contain false positives due to cross-byte borrow.
+    let classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
+    if classic == 0 {
+        return None;
+    }
+    // This function occurs a branch here contains zero byte doesn't, it delegates the branch
+    // to the memchr function, this is okay because a *branch still occurs*
+
+    // Borrow-safe (carry-safe) SWAR:
+    // mask off high bits so per-byte addition can't carry into the next byte.
+    let zero_mask = classic & !((input & LO_USIZE) << 7);
+
+    // SAFETY: `classic != 0` implies there is at least one real zero byte
+    // somewhere in the word (false positives only occur alongside a real zero
+    // due to borrow propagation), so `zero_mask` must be non-zero.
+    // Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
+    Some(unsafe { NonZeroUsize::new_unchecked(zero_mask) })
 }
 
 #[inline]
@@ -212,9 +201,9 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
     let mut offset = max_aligned_offset;
 
-    // SAFETY: trivially within bounds
     let start = text.as_ptr();
     let tail_len = len - offset; // tail is [offset, len)
+    // SAFETY: trivially within bounds
     if let Some(i) = unsafe { rposition_byte_len(start.add(offset), tail_len, x) } {
         return Some(offset + i);
     }
@@ -237,25 +226,23 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
         // Break if there is a matching byte.
         // **CHECK UPPER FIRST**
-        let xorred_upper = upper ^ repeated_x; //XOR to turn the matching bytes to NUL
-        // use the original SWAR (fewer instructions) to check for zero byte
-        if let Some(valid) = find_zero_byte_reversed(xorred_upper) {
+        //XOR to turn the matching bytes to NUL
+        // This swar algorithm has the benefit of not propagating 0xFF rightwards/leftwards after a match is found
+        if let Some(num) = contains_zero_byte_reversed(upper ^ repeated_x) {
             #[cfg(target_endian = "little")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (valid.leading_zeros() >> 3) as usize;
+            let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
             #[cfg(target_endian = "big")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (valid.trailing_zeros() >> 3) as usize;
+            let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
+
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
-        let xorred_lower = lower ^ repeated_x;
-        if let Some(valid) = find_zero_byte_reversed(xorred_lower) {
-            // TODO, TIDY UP SAFETY? use nonzerousize etc.
-            // same stuff as above otherwise
-            // SAFETY: GUARANTEED NON ZERO
+        // same as above
+        if let Some(num) = contains_zero_byte_reversed(lower ^ repeated_x) {
             #[cfg(target_endian = "little")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (valid.leading_zeros() >> 3) as usize;
+            let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
             #[cfg(target_endian = "big")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (valid.trailing_zeros() >> 3) as usize;
+            let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }

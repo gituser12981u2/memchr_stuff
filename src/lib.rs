@@ -3,6 +3,9 @@
 #![allow(
     clippy::blanket_clippy_restriction_lints,
     clippy::host_endian_bytes,
+    clippy::pub_with_shorthand,
+    clippy::absolute_paths,
+    clippy::arbitrary_source_item_ordering,
     clippy::implicit_return,
     clippy::doc_markdown,
     clippy::single_call_fn,
@@ -16,7 +19,6 @@
     clippy::items_after_statements,
     clippy::missing_docs_in_private_items,
     clippy::default_numeric_fallback,
-    clippy::absolute_paths,
     clippy::allow_attributes,
     clippy::allow_attributes_without_reason
 )]
@@ -24,7 +26,6 @@
 pub mod memchr_new;
 pub mod memchr_old;
 pub mod num;
-
 
 #[cfg(test)]
 pub mod test;

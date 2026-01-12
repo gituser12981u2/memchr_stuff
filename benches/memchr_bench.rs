@@ -2,10 +2,15 @@ use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use memchr_stuff::memchr_new;
 use memchr_stuff::memchr_old;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::time::Duration;
 
+const RANDOM_SEED: u64 = 4269; //change as needed
+
 fn create_test_arrays() -> Vec<usize> {
-    let aligned_sizes = [16usize, 64, 256, 1024, 8 * 1024, 64 * 1024];
+    // no point testing 16 really. doesnt get to the GOOD part.
+    let aligned_sizes = [/*16usize,*/ 64, 256, 1024, 8 * 1024, 64 * 1024];
     let mut sizes = Vec::with_capacity(aligned_sizes.len() * 2);
     for &size in &aligned_sizes {
         sizes.push(size);
@@ -34,16 +39,6 @@ impl Placement {
             Placement::Multiple => "multiple",
             Placement::RandomBytes => "random",
         }
-    }
-}
-
-// Simple deterministic PRNG (no extra deps). Good enough?
-fn xorshift64(mut x: u64) -> impl FnMut() -> u64 {
-    move || {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        x
     }
 }
 
@@ -84,9 +79,9 @@ fn make_data(size: usize, needle: u8, placement: Placement) -> Vec<u8> {
             }
         }
         Placement::RandomBytes => {
-            let mut next = xorshift64(0x6eed_0e9d_5a15_5eed_u64 ^ size as u64);
+            let mut rng = StdRng::seed_from_u64(RANDOM_SEED ^ size as u64);
             for b in &mut data {
-                *b = (next() as u8).wrapping_add(1);
+                *b = rng.random::<u8>().wrapping_add(1);
                 if *b == needle {
                     *b = needle.wrapping_add(1);
                 }
@@ -116,8 +111,6 @@ fn bench_memrchr(c: &mut Criterion) {
 
     let sizes = create_test_arrays();
 
-    // For memrchr, placement affects how far from the end the *last* match is.
-    // (e.g., "start" forces a full scan when there are no later matches.)
     let placements = [
         Placement::Absent,
         Placement::Start,

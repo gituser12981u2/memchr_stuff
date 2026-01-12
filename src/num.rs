@@ -4,7 +4,7 @@
 
 /// Returns an `usize` where every byte is equal to `x`.
 #[inline]
-pub(crate) const fn repeat_u8(x: u8) -> usize {
+pub const fn repeat_u8(x: u8) -> usize {
     usize::from_ne_bytes([x; size_of::<usize>()])
 }
 
