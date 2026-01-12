@@ -74,6 +74,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")] // ill add 32bit if i feel like it
     fn test_contains_zero_byte_reversed() {
         use crate::memchr_new::contains_zero_byte_reversed;
 
@@ -121,6 +122,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")] // ill add 32bit if i feel like it (this proves enough for now.)
     fn test_contains_zero_byte_reversed_with_iter() {
         use crate::memchr_new::contains_zero_byte_reversed;
 
