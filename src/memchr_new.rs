@@ -1,7 +1,4 @@
 #![allow(clippy::host_endian_bytes)]
-#![allow(clippy::multiple_unsafe_ops_per_block)]
-#![allow(clippy::undocumented_unsafe_blocks)]
-#![allow(clippy::empty_line_after_doc_comments)]
 
 // TODO? test on 32bit targets! (ok fuck 16 i dont think  rust even supports 16)
 // Original implementation taken from rust-memchr.
@@ -71,6 +68,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 
     if offset > 0 {
         offset = offset.min(len);
+        // SAFETY: within bounds
         let slice = unsafe { text.get_unchecked(..offset) };
         if let Some(index) = memchr_naive(x, slice) {
             return Some(index);
@@ -82,6 +80,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     while offset <= len - 2 * USIZE_BYTES {
         // SAFETY: the while's predicate guarantees a distance of at least 2 * usize_bytes
         // between the offset and the end of the slice.
+        // the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr in STD)
         unsafe {
             let u = ptr.add(offset).cast::<usize>().read();
             let v = ptr.add(offset + USIZE_BYTES).cast::<usize>().read();
@@ -253,7 +252,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
     let mut i = len;
     while i != 0 {
         i -= 1;
-        // TODO write verbose safety stuff
+        // SAFETY: trivially within bounds
         if unsafe { base.add(i).read() } == needle {
             return Some(i);
         }
@@ -317,7 +316,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     while offset > min_aligned_offset {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
-        // SAFETY: as above
+        // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr in STD)
         let lower = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
         // SAFETY: as above
         let upper = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };

@@ -1,5 +1,6 @@
 #![allow(internal_features)]
 #![feature(core_intrinsics, const_eval_select)]
+
 #![allow(
     clippy::blanket_clippy_restriction_lints,
     clippy::host_endian_bytes,
