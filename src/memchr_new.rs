@@ -119,6 +119,83 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     memchr_naive(x, slice).map(|i| offset + i)
 }
 
+/*
+
+
+FROM HACKERS DELIGHT
+
+https://github.com/lancetw/ebook-1/blob/master/02_algorithm/Hacker%27s%20Delight%202nd%20Edition.pdf
+
+WE DONT USE zbyter because it requires A LOT more instructions to check for 0 byte,
+
+I havent tested the mycro one, seems interesting though.
+
+
+int zbytel(unsigned x) {
+unsigned y;
+int n;
+// Original byte: 00 80 other
+y = (x & 0x7F7F7F7F)+ 0x7F7F7F7F; // 7F 7F 1xxxxxxx
+y = ~(y 1 x 1 0x7F7F7F7F); // 80 00 00000000
+n = nlz(y) >> 3; // n = 0 ... 4, 4 if x
+return n; // has no 0-byte.
+}
+FIGURE 6–2. Find leftmost 0-byte, branch-free code.
+The position of the rightmost 0-byte is given by the number of trailing 0’s in the final value of y
+computed above, divided by 8 (with fraction discarded). Using the expression for computing the
+number of trailing 0’s by means of the number of leading zeros instruction (see Section 5–4,
+“Counting Trailing 0’s ,” on page 107), this can be computed by replacing the assignment to n in the
+procedure above with:
+Click here to view code image
+n = (32 - nlz(~y & (y - 1))) >> 3;
+
+
+However this *FIX* also exists, I may try it.. obviously it's 32bit and needs to be scaled to be word size independent.
+
+
+FIGURE 5–24. Number of trailing zeros, Gaudet’s algorithm.
+As shown, the code uses the C “conditional expression” in six places. This construct has the form a?
+b:c. Its value is b if a is true (nonzero), and c if a is false (zero). Although a conditional expression
+must, in general, be compiled into compares and branches, for the simple cases in Figure 5–24
+branching can be avoided if the machine has a compare for equality to zero instruction that sets a
+target register to 1 if the operand is 0, and to 0 if the operand is nonzero. Branching can also be
+avoided by using conditional move instructions. Using compare, the assignment to b3 can be compiled
+into five instructions on the basic RISC: two to generate the hex constant, an and, the compare, and a
+shift left of 3. (The first, second, and last conditional expressions require one, three, and four
+instructions, respectively.)
+The code can be compiled into a total of 30 instructions. All six lines with the conditional
+expressions can run in parallel. On a machine with a sufficient degree of parallelism, it executes in
+ten cycles. Present machines don’t have that much parallelism, so as a practical matter it might help to
+change the first two uses of y in the program to x. This permits the first three executable statements to
+run in parallel.
+David Seal [Seal2] devised an algorithm for computing ntz(x) that is based on the idea of
+compressing the 232 possible values of x to a small dense set of integers and doing a table lookup. He
+uses the expression x & – x to reduce the number of possible values to a small number. The value of
+this expression is a word that contains a single 1-bit at the position of the least significant 1-bit in x,
+or is 0 if x = 0. Thus, x & – x has only 33 possible values. But they are not dense; they range from 0
+to 231.
+To produce a dense set of 33 integers that uniquely identify the 33 values of x & –x, Seal found a
+certain constant which, when multiplied by x & –x, produces the identifying value in the high-order
+six bits of the low-order half of the product of the constant and x & –x. Since x & – x is an integral
+power of 2 or is 0, the multiplication amounts to a left shift of the constant, or it is a multiplication by
+0. Using only the high-order five bits is not sufficient, because 33 distinct values are needed.
+The code is shown in Figure 5–25, where table entries shown as u are unused.
+
+
+
+\
+int ntz(unsigned x) {
+static char table[64] =
+{32, 0, 1,12, 2, 6, u,13, 3, u, 7, u, u, u, u,14,
+10, 4, u, u, 8, u, u,25, u, u, u, u, u,21,27,15,
+31,11, 5, u, u, u, u, u, 9, u, u,24, u, u,20,26,
+30, u, u, u, u,23, u,19, 29, u,22,18,28,17,16, u};
+x = (x & -x)*0x0450FBAF;
+return table[x >> 26];
+}
+
+*/
+
 #[inline]
 #[must_use]
 pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
@@ -130,6 +207,8 @@ pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
     //    for reverse search where we pick the *last* match.
 
     // Classic SWAR: may contain false positives due to cross-byte borrow.
+    // However considering that we want to check *as quickly* as possible, this is ideal.
+
     let classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
     if classic == 0 {
         return None;
@@ -139,6 +218,8 @@ pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
 
     // Borrow-safe (carry-safe) SWAR:
     // mask off high bits so per-byte addition can't carry into the next byte.
+    // This adds an extra 4 instructions on x86 without BMI intrinsics (would be fewer with andn? same goes for standard SWAR)
+    // Not falling into that trap!
     let zero_mask = classic & !((input & LO_USIZE) << 7);
 
     // SAFETY: `classic != 0` implies there is at least one real zero byte
