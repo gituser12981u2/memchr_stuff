@@ -4,10 +4,12 @@ use rand::{Rng, RngCore, SeedableRng, rng};
 // A lot of these tests are simply *OVERKILL* however just remove/toggle a bit when done.
 
 // simple toggleable tests
-const DETERMINISTIC: bool = false;
+const DETERMINISTIC: bool = true;
 const TEST_SIZE: usize = 10000;
 const RANDOM_SEED: u64 = 4269;
 const MAX_SIZED_STRING: usize = 20000;
+const USIZE_BYTES: usize = size_of::<usize>();
+use core::num::NonZeroUsize;
 
 pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Vec<u8>> {
     let mut rng: Box<dyn RngCore> = if deterministic {
@@ -28,8 +30,40 @@ pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Ve
     strings
 }
 
+pub type UsizeByteArray = [u8; size_of::<usize>()];
+
+pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> Vec<UsizeByteArray> {
+    let mut rng: Box<dyn RngCore> = if deterministic {
+        Box::new(StdRng::seed_from_u64(RANDOM_SEED))
+    } else {
+        Box::new(rng())
+    };
+
+    let mut arrays = Vec::with_capacity(count);
+    for _ in 0..count {
+        let mut bytes: UsizeByteArray = [0u8; size_of::<usize>()];
+        rng.fill_bytes(&mut bytes);
+        arrays.push(bytes);
+    }
+
+    arrays
+}
+
+const fn find_last_zero_byte(num: NonZeroUsize) -> usize {
+    #[cfg(target_endian = "little")]
+    {
+        USIZE_BYTES - 1 - ((num.leading_zeros() >> 3) as usize)
+    }
+
+    #[cfg(target_endian = "big")]
+    {
+        USIZE_BYTES - 1 - ((num.trailing_zeros() >> 3) as usize)
+    }
+}
 #[cfg(test)]
 mod tests {
+
+    use crate::memchr_new::contains_zero_byte_reversed;
 
     use super::*;
 
@@ -76,142 +110,19 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_pointer_width = "64")] // ill add 32bit if i feel like it
-    fn test_contains_zero_byte_reversed() {
-        use crate::memchr_new::contains_zero_byte_reversed;
+    fn test_reversed() {
+        let arrays = generate_random_usize_byte_arrays(TEST_SIZE, DETERMINISTIC);
 
-        assert_eq!(contains_zero_byte_reversed(usize::MAX), None);
-        assert_eq!(contains_zero_byte_reversed(0x0101010101010101usize), None);
-        assert_eq!(contains_zero_byte_reversed(0x8080808080808080usize), None);
-        assert_eq!(contains_zero_byte_reversed(0xFFFFFFFFFFFFFFFFusize), None);
+        for bytes in arrays.iter() {
+            let word = usize::from_ne_bytes(*bytes);
 
-        const USIZE_BYTES: usize = size_of::<usize>();
-
-        // test zero byte in every possible position(surprisingly, this is rather quick!)
-        for byte_pos in 0..USIZE_BYTES {
-            let shift = byte_pos * 8;
-            let word = !0usize ^ (0xFFusize << shift); // All 0xFF except one 0x00 byte
-            let result = contains_zero_byte_reversed(word);
-            assert!(
-                result.is_some(),
-                "Expected Some for zero byte at position {byte_pos}, word: {word:#018x}"
-            );
-
-            let mask = result.unwrap().get();
-            // should have a bit set in the high bit of the zero byte position
-            let expected_bit = 0x80usize << shift;
-            assert!(
-                mask & expected_bit != 0,
-                "Expected bit at position {byte_pos} to be set, mask: {mask:#018x}, expected_bit: {expected_bit:#018x}"
-            );
-        }
-
-        // should detect at least one
-        assert!(contains_zero_byte_reversed(0x0000000000000000usize).is_some());
-        assert!(contains_zero_byte_reversed(0x00FF00FF00FF00FFusize).is_some());
-        assert!(contains_zero_byte_reversed(0xFF00FF00FF00FF00usize).is_some());
-
-        // these test the borrow-safe mask logic
-        assert!(contains_zero_byte_reversed(0x0001020304050607usize).is_some());
-        assert!(contains_zero_byte_reversed(0x0706050403020100usize).is_some());
-        assert!(contains_zero_byte_reversed(0xFF00FFFFFFFFFFFF).is_some());
-        assert!(contains_zero_byte_reversed(0xFFFFFFFFFFFFFF00).is_some());
-
-        // words with 0x80 but no zero bytes return None
-        // (these could cause false positives in naive SWAR)
-        assert_eq!(contains_zero_byte_reversed(0x8081828384858687usize), None);
-        assert_eq!(contains_zero_byte_reversed(0xFF80FF80FF80FF80usize), None);
-    }
-
-    #[test]
-    #[cfg(target_pointer_width = "64")] // ill add 32bit if i feel like it (this proves enough for now.)
-    fn test_contains_zero_byte_reversed_with_iter() {
-        use crate::memchr_new::contains_zero_byte_reversed;
-
-        const USIZE_BYTES: usize = size_of::<usize>();
-
-        // test that the mask returned by contains_zero_byte_reversed correctly
-        // identifies the position of zero bytes when compared with iter().rposition()
-
-        for byte_pos in 0..USIZE_BYTES {
-            let shift = byte_pos * 8;
-            let word = !0usize ^ (0xFFusize << shift); // All 0xFF except one 0x00 byte
-            let word_bytes = word.to_ne_bytes();
-
-            // find rightmost (last) zero byte using iter().rposition()
-            let expected_pos = word_bytes.iter().rposition(|&b| b == 0);
-            assert_eq!(
-                expected_pos,
-                Some(byte_pos),
-                "iter().rposition() should find zero at byte_pos {byte_pos}"
-            );
-
-            // Verify contains_zero_byte_reversed detects it
-            let result = contains_zero_byte_reversed(word);
-            assert!(
-                result.is_some(),
-                "Should detect zero byte at position {byte_pos}"
-            );
-
-            // calculate position from the mask
-            let mask = result.unwrap();
-            #[cfg(target_endian = "little")]
-            let detected_pos = USIZE_BYTES - 1 - (mask.leading_zeros() >> 3) as usize;
-            #[cfg(target_endian = "big")]
-            let detected_pos = USIZE_BYTES - 1 - (mask.trailing_zeros() >> 3) as usize;
+            let expected_pos = bytes.iter().rposition(|&b| b == 0);
+            let detected_pos = contains_zero_byte_reversed(word).map(find_last_zero_byte);
 
             assert_eq!(
-                detected_pos, byte_pos,
-                "Position calculated from mask should match byte_pos {byte_pos}"
+                detected_pos, expected_pos,
+                "Mismatch for word={word:#018x} bytes={bytes:?}"
             );
         }
-
-        //  multiple zero bytes - should find the rightmost one
-        let test_cases = [
-            (0x00FF00FFFFFFFFFFusize, "two zero bytes"),
-            (0x0000FFFFFFFFFFFFusize, "adjacent zeros at start"),
-            (0xFFFFFFFFFFFF0000usize, "adjacent zeros at end"),
-            (0x00FF00FF00FF00FFusize, "alternating zeros"),
-            (0xFF00FF00FF00FF00usize, "alternating zeros offset"),
-        ];
-
-        for (word, desc) in test_cases {
-            let word_bytes = word.to_ne_bytes();
-            let expected_pos = word_bytes.iter().rposition(|&b| b == 0);
-
-            if expected_pos.is_none() {
-                continue;
-            }
-
-            let result = contains_zero_byte_reversed(word);
-            assert!(result.is_some(), "Should detect zero bytes in {desc}");
-
-            let mask = result.unwrap();
-            #[cfg(target_endian = "little")]
-            let detected_pos = USIZE_BYTES - 1 - (mask.leading_zeros() >> 3) as usize;
-            #[cfg(target_endian = "big")]
-            let detected_pos = USIZE_BYTES - 1 - (mask.trailing_zeros() >> 3) as usize;
-
-            assert_eq!(
-                detected_pos,
-                expected_pos.unwrap(),
-                "Should find rightmost zero byte in {desc}: word={word:#018x}"
-            );
-        }
-
-        let all_zeros = 0x0000000000000000usize;
-        let all_zeros_bytes = all_zeros.to_ne_bytes();
-        let expected_pos = all_zeros_bytes.iter().rposition(|&b| b == 0);
-        assert_eq!(
-            expected_pos,
-            Some(USIZE_BYTES - 1),
-            "zeros word should have rightmost zero at last position"
-        );
-
-        let result = contains_zero_byte_reversed(all_zeros);
-        assert!(
-            result.is_some(),
-            "Should detect zero bytes in all-zeros word"
-        );
     }
 }
