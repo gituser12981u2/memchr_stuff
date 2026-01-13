@@ -1,10 +1,19 @@
-#![allow(clippy::host_endian_bytes)]
-
 // TODO? test on 32bit targets! (ok fuck 16 i dont think  rust even supports 16)
-// Original implementation taken from rust-memchr.
+// Original implementation taken from https://doc.rust-lang.org/src/core/slice/memchr.rs.html
 
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8;
+
+/*
+
+usize::repeat... is a private function in std lib internals, mock it up with this.
+
+#[inline]
+pub const fn repeat_u8(x: u8) -> usize {
+    usize::from_ne_bytes([x; size_of::<usize>()])
+}
+
+*/
 
 // USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
@@ -68,8 +77,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 
     if offset > 0 {
         offset = offset.min(len);
-        // SAFETY: within bounds
-        let slice = unsafe { text.get_unchecked(..offset) };
+        let slice = &text[..offset]; //compiler elides checks on this, no panic branch.
         if let Some(index) = memchr_naive(x, slice) {
             return Some(index);
         }
@@ -82,14 +90,14 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         // between the offset and the end of the slice.
         // the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr in STD)
         unsafe {
-            let u = ptr.add(offset).cast::<usize>().read();
-            let v = ptr.add(offset + USIZE_BYTES).cast::<usize>().read();
+            let u = *(ptr.add(offset) as *const usize);
+            let v = *(ptr.add(offset + USIZE_BYTES) as *const usize);
 
             // break if there is a matching byte
             // ! OPTIMIZATION !
             // check this branch first (lower has precedence, obvs)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
-            // then  XOR to turn the matching bytes to NUL
+            // then  XOR to turn the matching bytes to NUL and NUL to `x`
             if let Some(lower) = contains_zero_byte(u ^ repeated_x) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (lower.trailing_zeros() >> 3) as usize;
@@ -161,49 +169,7 @@ Click here to view code image
 n = (32 - nlz(~y & (y - 1))) >> 3;
 
 
-However this *FIX* also exists, I may try it.. obviously it's 32bit and needs to be scaled to be word size independent.
-
-
-FIGURE 5–24. Number of trailing zeros, Gaudet’s algorithm.
-As shown, the code uses the C “conditional expression” in six places. This construct has the form a?
-b:c. Its value is b if a is true (nonzero), and c if a is false (zero). Although a conditional expression
-must, in general, be compiled into compares and branches, for the simple cases in Figure 5–24
-branching can be avoided if the machine has a compare for equality to zero instruction that sets a
-target register to 1 if the operand is 0, and to 0 if the operand is nonzero. Branching can also be
-avoided by using conditional move instructions. Using compare, the assignment to b3 can be compiled
-into five instructions on the basic RISC: two to generate the hex constant, an and, the compare, and a
-shift left of 3. (The first, second, and last conditional expressions require one, three, and four
-instructions, respectively.)
-The code can be compiled into a total of 30 instructions. All six lines with the conditional
-expressions can run in parallel. On a machine with a sufficient degree of parallelism, it executes in
-ten cycles. Present machines don’t have that much parallelism, so as a practical matter it might help to
-change the first two uses of y in the program to x. This permits the first three executable statements to
-run in parallel.
-David Seal [Seal2] devised an algorithm for computing ntz(x) that is based on the idea of
-compressing the 232 possible values of x to a small dense set of integers and doing a table lookup. He
-uses the expression x & – x to reduce the number of possible values to a small number. The value of
-this expression is a word that contains a single 1-bit at the position of the least significant 1-bit in x,
-or is 0 if x = 0. Thus, x & – x has only 33 possible values. But they are not dense; they range from 0
-to 231.
-To produce a dense set of 33 integers that uniquely identify the 33 values of x & –x, Seal found a
-certain constant which, when multiplied by x & –x, produces the identifying value in the high-order
-six bits of the low-order half of the product of the constant and x & –x. Since x & – x is an integral
-power of 2 or is 0, the multiplication amounts to a left shift of the constant, or it is a multiplication by
-0. Using only the high-order five bits is not sufficient, because 33 distinct values are needed.
-The code is shown in Figure 5–25, where table entries shown as u are unused.
-
-
-
-\
-int ntz(unsigned x) {
-static char table[64] =
-{32, 0, 1,12, 2, 6, u,13, 3, u, 7, u, u, u, u,14,
-10, 4, u, u, 8, u, u,25, u, u, u, u, u,21,27,15,
-31,11, 5, u, u, u, u, u, 9, u, u,24, u, u,20,26,
-30, u, u, u, u,23, u,19, 29, u,22,18,28,17,16, u};
-x = (x & -x)*0x0450FBAF;
-return table[x >> 26];
-}
+.
 
 
 **ALSO NOTE, NO POINT REIMPLEMENTING TRAILING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
@@ -238,6 +204,12 @@ pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
     // Not falling into that trap!
     let zero_mask = classic & !((input & LO_USIZE) << 7);
 
+    // Remove this *probably* due to debug checks already doing so(this just provides amore helpful warning)
+    debug_assert!(
+        zero_mask != 0,
+        "should never be 0 (checked by debug assertions in nonzerousize however too, just this is explicit)"
+    );
+
     // SAFETY: `classic != 0` implies there is at least one real zero byte
     // somewhere in the word (false positives only occur alongside a real zero
     // due to borrow propagation), so `zero_mask` must be non-zero.
@@ -264,7 +236,6 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 ///
 #[must_use]
 #[inline]
-#[allow(clippy::cast_ptr_alignment)] //burntsushi wrote this so...
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
@@ -316,10 +287,9 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     while offset > min_aligned_offset {
         // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
-        // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr in STD)
-        let lower = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
-        // SAFETY: as above
-        let upper = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
+        // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr/memrchr in STD)
+        let lower = unsafe { *(ptr.add(offset - 2 * USIZE_BYTES) as *const usize) };
+        let upper = unsafe { *(ptr.add(offset - USIZE_BYTES) as *const usize) };
 
         // Break if there is a matching byte.
         // **CHECK UPPER FIRST**

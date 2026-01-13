@@ -1,5 +1,8 @@
 use rand::rngs::StdRng;
 use rand::{Rng, RngCore, SeedableRng, rng};
+
+// A lot of these tests are simply *OVERKILL* however just remove/toggle a bit when done.
+
 // simple toggleable tests
 const DETERMINISTIC: bool = false;
 const TEST_SIZE: usize = 10000;
@@ -27,9 +30,8 @@ pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Ve
 
 #[cfg(test)]
 mod tests {
-    use super::DETERMINISTIC;
-    use super::TEST_SIZE;
-    use super::generate_random_byte_strings;
+
+    use super::*;
 
     fn test_memchr(search: u8, sl: &[u8]) {
         let memchrtest = crate::memchr_new::memchr(search, sl);
