@@ -30,9 +30,7 @@ pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Ve
     strings
 }
 
-pub type UsizeByteArray = [u8; size_of::<usize>()];
-
-pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> Vec<UsizeByteArray> {
+pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> Vec< [u8; size_of::<usize>()]> {
     let mut rng: Box<dyn RngCore> = if deterministic {
         Box::new(StdRng::seed_from_u64(RANDOM_SEED))
     } else {
@@ -41,7 +39,7 @@ pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> V
 
     let mut arrays = Vec::with_capacity(count);
     for _ in 0..count {
-        let mut bytes: UsizeByteArray = [0u8; size_of::<usize>()];
+        let mut bytes= [0u8; size_of::<usize>()];
         rng.fill_bytes(&mut bytes);
         arrays.push(bytes);
     }
@@ -63,8 +61,6 @@ const fn find_last_zero_byte(num: NonZeroUsize) -> usize {
 #[cfg(test)]
 mod tests {
 
-    use crate::memchr_new::contains_zero_byte_reversed;
-
     use super::*;
 
     fn test_memchr(search: u8, sl: &[u8]) {
@@ -72,7 +68,9 @@ mod tests {
         let realans = sl.iter().position(|b| *b == search);
         assert!(
             memchrtest == realans,
-            "test failed in memchr: expected {realans:?}, got {memchrtest:?} for byte {search:#04x}"
+            "test failed in memchr: expected {realans:?}, got {memchrtest:?} for byte {search:#04x}\n
+            searching for {} with ASCII value {search} in slice {}",
+            char::from_u32(search as _).unwrap(),String::from_utf8_lossy(sl)
         );
     }
 
@@ -81,7 +79,9 @@ mod tests {
         let memrchrtest = crate::memchr_new::memrchr(search, sl);
         assert!(
             memrchrtest == realans,
-            "test failed in memrchr: expected {realans:?}, got {memrchrtest:?} for byte {search:#04x}"
+            "test failed in memrchr: expected {realans:?}, got {memrchrtest:?} for byte {search:#04x}\n
+            searching for {} with ASCII value {search} in slice {}",
+            char::from_u32(search as _).unwrap(),String::from_utf8_lossy(sl)
         );
     }
 
@@ -117,7 +117,8 @@ mod tests {
             let word = usize::from_ne_bytes(*bytes);
 
             let expected_pos = bytes.iter().rposition(|&b| b == 0);
-            let detected_pos = contains_zero_byte_reversed(word).map(find_last_zero_byte);
+            let detected_pos =
+                crate::memchr_new::contains_zero_byte_reversed(word).map(find_last_zero_byte);
 
             assert_eq!(
                 detected_pos, expected_pos,
