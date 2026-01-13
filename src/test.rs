@@ -151,7 +151,7 @@ mod tests {
 
             let expected_pos = bytes.iter().position(|&b| b == 0);
             let detected_pos =
-                crate::memchr_new::contains_zero_byte(word).map(find_first_zero_byte);
+                crate::memchr_new::contains_zero_byte_forward(word).map(find_first_zero_byte);
 
             assert_eq!(
                 detected_pos, expected_pos,

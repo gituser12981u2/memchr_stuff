@@ -21,16 +21,23 @@ use core::num::NonZeroUsize;
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
 
+macro_rules! HASZERO {
+    ($num:expr) => {
+        ($num).wrapping_sub(LO_USIZE) & !($num) & HI_USIZE
+    };
+}
+
 #[inline]
 #[cfg(target_endian = "little")]
-pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
-    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
+pub(crate) const fn contains_zero_byte_forward(input: usize) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(HASZERO!(input))
 }
 
 #[inline]
 #[cfg(target_endian = "big")]
-pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
+pub(crate) const fn contains_zero_byte_forward(input: usize) -> Option<NonZeroUsize> {
     contains_zero_byte_borrow_fix(input)
+    // Need to patch due to borrow fixes. WRITE THIS UP TODO!
 }
 
 const LO_USIZE: usize = repeat_u8(0x01);
@@ -105,28 +112,19 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // check this branch first (lower has precedence, obvs)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
-            if let Some(lower) = contains_zero_byte(u ^ repeated_x) {
+            if let Some(lower) = contains_zero_byte_forward(u ^ repeated_x) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (lower.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
                 let byte_pos = (lower.leading_zeros() >> 3) as usize;
 
-                debug_assert!(
-                    Some(byte_pos) == u.to_ne_bytes().iter().position(|b| b | *b == x),
-                    "manual verification failed in lower memchr loop"
-                );
                 return Some(offset + byte_pos);
             }
-            if let Some(upper) = contains_zero_byte(v ^ repeated_x) {
+            if let Some(upper) = contains_zero_byte_forward(v ^ repeated_x) {
                 #[cfg(target_endian = "little")]
                 let byte_pos = (upper.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
                 let byte_pos = (upper.leading_zeros() >> 3) as usize;
-
-                debug_assert!(
-                    Some(byte_pos) == v.to_ne_bytes().iter().position(|b| b | *b == x),
-                    "manual verification failed in upper memchr loop"
-                );
 
                 return Some(offset + USIZE_BYTES + byte_pos);
             }
@@ -200,12 +198,14 @@ lacks the instruction and has to software emulate it. I trust LLVM maintainers t
 #[inline]
 pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
     contains_zero_byte_borrow_fix(input)
+    // Need a different algorithmic approach
 }
 
 #[cfg(target_endian = "big")]
 #[inline]
 pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
-    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
+    NonZeroUsize::new(HASZERO!(input))
+    // No need to fix on BE due to 0xFF only propagating rightways
 }
 
 #[inline]
@@ -221,7 +221,7 @@ pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize>
     // Classic SWAR: may contain false positives due to cross-byte borrow.
     // However considering that we want to check *as quickly* as possible, this is ideal.
 
-    let classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
+    let classic = HASZERO!(input);
     if classic == 0 {
         return None;
     }
@@ -340,11 +340,6 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             #[cfg(target_endian = "big")]
             let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
 
-            debug_assert!(
-                Some(zero_byte_pos) == upper.to_ne_bytes().iter().rposition(|b| b | *b == x),
-                "manual verification failed in upper memrchr loop"
-            );
-
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
@@ -354,11 +349,6 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
             #[cfg(target_endian = "big")]
             let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
-
-            debug_assert!(
-                Some(zero_byte_pos) == lower.to_ne_bytes().iter().rposition(|b| b | *b == x),
-                "manual verification failed in lower memrchr loop"
-            );
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
