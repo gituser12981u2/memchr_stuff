@@ -205,7 +205,7 @@ pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
 #[cfg(target_endian = "big")]
 #[inline]
 pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
-    contains_zero_byte(input)
+    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
 }
 
 #[inline]
