@@ -235,7 +235,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline]
+#[inline] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
@@ -275,6 +275,15 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     if let Some(i) = unsafe { rposition_byte_len(start.add(offset), tail_len, x) } {
         return Some(offset + i);
     }
+    /*
+    This adds an extra ~10 instructions!(on x86 v1) (from std.) definitely worthwhile to avoid!
+
+     if let Some(index) = text[offset..].iter().rposition(|elt| *elt == x) {
+        return Some(offset + index);
+    }
+
+
+     */
 
     // Search the body of the text, make sure we don't cross min_aligned_offset.
 
