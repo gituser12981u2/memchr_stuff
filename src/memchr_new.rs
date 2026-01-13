@@ -21,10 +21,38 @@ use core::num::NonZeroUsize;
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
 
+// These 3 macros are just simple code deduplication tools. switch with functions if wanted.
 macro_rules! HASZERO {
     ($num:expr) => {
         ($num).wrapping_sub(LO_USIZE) & !($num) & HI_USIZE
     };
+}
+
+macro_rules! find_first_NUL {
+    ($num:expr) => {{
+        #[cfg(target_endian = "little")]
+        {
+            ($num.trailing_zeros() >> 3) as usize
+        }
+
+        #[cfg(target_endian = "big")]
+        {
+            ($num.leading_zeros() >> 3) as usize
+        }
+    }};
+}
+
+macro_rules! find_last_NUL {
+    ($num:expr) => {{
+        #[cfg(target_endian = "big")]
+        {
+            (USIZE_BYTES - 1 - (($num.trailing_zeros()) >> 3) as usize)
+        }
+        #[cfg(target_endian = "little")]
+        {
+            (USIZE_BYTES - 1 - (($num.leading_zeros()) >> 3) as usize)
+        }
+    }};
 }
 
 #[inline]
@@ -113,20 +141,14 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
             if let Some(lower) = contains_zero_byte_forward(u ^ repeated_x) {
-                #[cfg(target_endian = "little")]
-                let byte_pos = (lower.trailing_zeros() >> 3) as usize;
-                #[cfg(target_endian = "big")]
-                let byte_pos = (lower.leading_zeros() >> 3) as usize;
+                let zero_byte_pos = find_first_NUL!(lower);
 
-                return Some(offset + byte_pos);
+                return Some(offset + zero_byte_pos);
             }
             if let Some(upper) = contains_zero_byte_forward(v ^ repeated_x) {
-                #[cfg(target_endian = "little")]
-                let byte_pos = (upper.trailing_zeros() >> 3) as usize;
-                #[cfg(target_endian = "big")]
-                let byte_pos = (upper.leading_zeros() >> 3) as usize;
+                let zero_byte_pos = find_first_NUL!(upper);
 
-                return Some(offset + USIZE_BYTES + byte_pos);
+                return Some(offset + USIZE_BYTES + zero_byte_pos);
             }
         }
 
@@ -335,20 +357,14 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         //XOR to turn the matching bytes to NUL
         // This swar algorithm has the benefit of not propagating 0xFF rightwards/leftwards after a match is found
         if let Some(num) = contains_zero_byte_reversed(upper ^ repeated_x) {
-            #[cfg(target_endian = "little")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
-            #[cfg(target_endian = "big")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
+            let zero_byte_pos = find_last_NUL!(num);
 
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
         // same as above
         if let Some(num) = contains_zero_byte_reversed(lower ^ repeated_x) {
-            #[cfg(target_endian = "little")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
-            #[cfg(target_endian = "big")]
-            let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
+            let zero_byte_pos = find_last_NUL!(num);
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
