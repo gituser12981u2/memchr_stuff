@@ -30,40 +30,7 @@ pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
 #[inline]
 #[cfg(target_endian = "big")]
 pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
-    // Hybrid approach:
-    // 1) Use the classic SWAR test as a cheap early-out for the common case
-    //    where there are no zero bytes.
-    // 2) If the classic test indicates a possible match, compute a borrow/carry-
-    //    safe mask that cannot produce cross-byte false positives. This matters
-    //    for reverse search where we pick the *last* match.
-
-    // Classic SWAR: may contain false positives due to cross-byte borrow.
-    // However considering that we want to check *as quickly* as possible, this is ideal.
-
-    let classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
-    if classic == 0 {
-        return None;
-    }
-    // This function occurs a branch here contains zero byte doesn't, it delegates the branch
-    // to the memchr function, this is okay because a *branch still occurs*
-
-    // Borrow-safe (carry-safe) SWAR:
-    // mask off high bits so per-byte addition can't carry into the next byte.
-    // This adds an extra 4 instructions on x86 without BMI intrinsics (would be fewer with andn? same goes for standard SWAR)
-    // Not falling into that trap!
-    let zero_mask = classic & !((input & LO_USIZE) << 7);
-
-    // Remove this *probably* due to debug checks already doing so(this just provides amore helpful warning)
-    debug_assert!(
-        zero_mask != 0,
-        "should never be 0 (checked by debug assertions in nonzerousize however too, just this is explicit)"
-    );
-
-    // SAFETY: `classic != 0` implies there is at least one real zero byte
-    // somewhere in the word (false positives only occur alongside a real zero
-    // due to borrow propagation), so `zero_mask` must be non-zero.
-    // Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
-    Some(unsafe { NonZeroUsize::new_unchecked(zero_mask) })
+    contains_zero_byte_borrow_fix(input)
 }
 
 const LO_USIZE: usize = repeat_u8(0x01);
@@ -229,9 +196,21 @@ lacks the instruction and has to software emulate it. I trust LLVM maintainers t
 
 */
 
+#[cfg(target_endian = "little")]
+#[inline]
+pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
+    contains_zero_byte_borrow_fix(input)
+}
+
+#[cfg(target_endian = "big")]
+#[inline]
+pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
+    contains_zero_byte(input)
+}
+
 #[inline]
 #[must_use]
-pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
+pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
     // Hybrid approach:
     // 1) Use the classic SWAR test as a cheap early-out for the common case
     //    where there are no zero bytes.

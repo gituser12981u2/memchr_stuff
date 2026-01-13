@@ -133,7 +133,7 @@ mod tests {
 
             let expected_pos = bytes.iter().rposition(|&b| b == 0);
             let detected_pos =
-                crate::memchr_new::contains_zero_byte_reversed(word).map(find_last_zero_byte);
+                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_zero_byte);
 
             assert_eq!(
                 detected_pos, expected_pos,
