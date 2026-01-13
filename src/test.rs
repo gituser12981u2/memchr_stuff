@@ -30,7 +30,10 @@ pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Ve
     strings
 }
 
-pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> Vec< [u8; size_of::<usize>()]> {
+pub fn generate_random_usize_byte_arrays(
+    count: usize,
+    deterministic: bool,
+) -> Vec<[u8; size_of::<usize>()]> {
     let mut rng: Box<dyn RngCore> = if deterministic {
         Box::new(StdRng::seed_from_u64(RANDOM_SEED))
     } else {
@@ -39,7 +42,7 @@ pub fn generate_random_usize_byte_arrays(count: usize, deterministic: bool) -> V
 
     let mut arrays = Vec::with_capacity(count);
     for _ in 0..count {
-        let mut bytes= [0u8; size_of::<usize>()];
+        let mut bytes = [0u8; size_of::<usize>()];
         rng.fill_bytes(&mut bytes);
         arrays.push(bytes);
     }
@@ -56,6 +59,18 @@ const fn find_last_zero_byte(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "big")]
     {
         USIZE_BYTES - 1 - ((num.trailing_zeros() >> 3) as usize)
+    }
+}
+
+const fn find_first_zero_byte(num: NonZeroUsize) -> usize {
+    #[cfg(target_endian = "little")]
+    {
+        (num.trailing_zeros() >> 3) as usize
+    }
+
+    #[cfg(target_endian = "big")]
+    {
+        (num.leading_zeros() >> 3) as usize
     }
 }
 #[cfg(test)]
@@ -122,7 +137,25 @@ mod tests {
 
             assert_eq!(
                 detected_pos, expected_pos,
-                "Mismatch for word={word:#018x} bytes={bytes:?}"
+                "Mismatch for word={word:#018x} bytes={bytes:?} in contains last zero byte!"
+            );
+        }
+    }
+
+    #[test]
+    fn test_forward() {
+        let arrays = generate_random_usize_byte_arrays(TEST_SIZE, DETERMINISTIC);
+
+        for bytes in arrays.iter() {
+            let word = usize::from_ne_bytes(*bytes);
+
+            let expected_pos = bytes.iter().position(|&b| b == 0);
+            let detected_pos =
+                crate::memchr_new::contains_zero_byte(word).map(find_first_zero_byte);
+
+            assert_eq!(
+                detected_pos, expected_pos,
+                "Mismatch for word={word:#018x} bytes={bytes:?} in contains zero byte!"
             );
         }
     }
