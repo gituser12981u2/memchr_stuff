@@ -29,7 +29,7 @@ pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
 
 #[inline]
 #[cfg(target_endian = "big")]
-pub(crate) const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
+pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
     // Hybrid approach:
     // 1) Use the classic SWAR test as a cheap early-out for the common case
     //    where there are no zero bytes.
