@@ -23,14 +23,14 @@ use core::num::NonZeroUsize;
 
 #[inline]
 #[cfg(target_endian = "little")]
-pub(crate) const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
-    NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE)
+pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
 }
 
 #[inline]
 #[cfg(target_endian = "big")]
 pub(crate) const fn contains_zero_byte(x: usize) -> Option<NonZeroUsize> {
-        // Hybrid approach:
+    // Hybrid approach:
     // 1) Use the classic SWAR test as a cheap early-out for the common case
     //    where there are no zero bytes.
     // 2) If the classic test indicates a possible match, compute a borrow/carry-
