@@ -103,6 +103,11 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
                 let byte_pos = (lower.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
                 let byte_pos = (lower.leading_zeros() >> 3) as usize;
+
+                debug_assert!(
+                    Some(byte_pos) == u.to_ne_bytes().iter().position(|b| b | *b == x),
+                    "manual verification failed in lower memchr loop"
+                );
                 return Some(offset + byte_pos);
             }
             if let Some(upper) = contains_zero_byte(v ^ repeated_x) {
@@ -110,6 +115,12 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
                 let byte_pos = (upper.trailing_zeros() >> 3) as usize;
                 #[cfg(target_endian = "big")]
                 let byte_pos = (upper.leading_zeros() >> 3) as usize;
+
+                debug_assert!(
+                    Some(byte_pos) == v.to_ne_bytes().iter().position(|b| b | *b == x),
+                    "manual verification failed in upper memchr loop"
+                );
+
                 return Some(offset + USIZE_BYTES + byte_pos);
             }
         }
@@ -310,6 +321,11 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             #[cfg(target_endian = "big")]
             let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
 
+            debug_assert!(
+                Some(zero_byte_pos) == upper.to_ne_bytes().iter().rposition(|b| b | *b == x),
+                "manual verification failed in upper memrchr loop"
+            );
+
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
@@ -319,6 +335,11 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             let zero_byte_pos = USIZE_BYTES - 1 - (num.leading_zeros() >> 3) as usize;
             #[cfg(target_endian = "big")]
             let zero_byte_pos = USIZE_BYTES - 1 - (num.trailing_zeros() >> 3) as usize;
+
+            debug_assert!(
+                Some(zero_byte_pos) == lower.to_ne_bytes().iter().rposition(|b| b | *b == x),
+                "manual verification failed in lower memrchr loop"
+            );
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
