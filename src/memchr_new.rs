@@ -2,24 +2,17 @@
 // Original implementation taken from https://doc.rust-lang.org/src/core/slice/memchr.rs.html
 
 /// TODO: change to work with rust std.
-use crate::num::repeat_u8;
-
-/*
-
-usize::repeat... is a private function in std lib internals, mock it up with this.
-
-#[inline]
-pub const fn repeat_u8(x: u8) -> usize {
-    usize::from_ne_bytes([x; size_of::<usize>()])
-}
-
-*/
+use crate::num::repeat_u8; //usize::repeat... is a private function in std lib internals, mock it up with this.
 
 // USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
 //https://doc.rust-lang.org/src/core/num/nonzero.rs.html#599
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
+
+const LO_USIZE: usize = repeat_u8(0x01);
+const HI_USIZE: usize = repeat_u8(0x80);
+const USIZE_BYTES: usize = size_of::<usize>();
 
 // These 3 macros are just simple code deduplication tools. switch with functions if wanted.
 macro_rules! HASZERO {
@@ -67,10 +60,6 @@ pub(crate) const fn contains_zero_byte_forward(input: usize) -> Option<NonZeroUs
     contains_zero_byte_borrow_fix(input)
     // Need to patch due to borrow fixes. WRITE THIS UP TODO!
 }
-
-const LO_USIZE: usize = repeat_u8(0x01);
-const HI_USIZE: usize = repeat_u8(0x80);
-const USIZE_BYTES: usize = size_of::<usize>();
 
 #[inline]
 #[must_use]
@@ -210,7 +199,7 @@ n = (32 - nlz(~y & (y - 1))) >> 3;
 .
 
 
-**ALSO NOTE, NO POINT REIMPLEMENTING TRAILING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
+**ALSO NOTE, NO POINT REIMPLEMENTING TRAILING/LEADING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
 lacks the instruction and has to software emulate it. I trust LLVM maintainers to be a lot better than me at this!**
 
 
