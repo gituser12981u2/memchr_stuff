@@ -221,7 +221,7 @@ pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize>
     // Classic SWAR: may contain false positives due to cross-byte borrow.
     // However considering that we want to check *as quickly* as possible, this is ideal.
 
-    let classic = input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE;
+    let mut classic = input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE;
     if classic == 0 {
         return None;
     }
@@ -229,17 +229,27 @@ pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize>
     // to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
 
     // Borrow-safe (carry-safe) SWAR:
-    // mask off high bits so per-byte addition can't carry into the next byte.
-    // This adds an extra 3 instructions on x86 without BMI intrinsics (would be 2 with andn? same goes for standard SWAR)
-    // Not falling into that trap!
-    let zero_mask = classic & !(input << 7);
+    //
+    // The classic HASZERO mask is perfect for a boolean “any zero byte?” check, but the *per-byte* mask
+    // can contain extra 0x80 bits when the subtraction `input - 0x01..` borrows across byte lanes.
+    // That’s a problem here because we don’t just test “non-zero?” — we feed the mask into
+    // `leading_zeros`/`trailing_zeros` to pick an actual byte index.
+    //
+    // Example (two adjacent bytes, lowest first):
+    // - `input = [0x00, 0x01]`
+    // - subtracting `0x01..` borrows from the `0x00` byte into the next byte, so the classic mask may
+    //   report both bytes as candidates even though only the first byte is truly zero.
+    //
+    // `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
+    // 0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.
+    classic &= !(input << 7);
 
     // SAFETY: `classic != 0` implies there is at least one real zero byte
     // somewhere in the word (false positives only occur alongside a real zero
     // due to borrow propagation), so `zero_mask` must be non-zero.
     // Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
     // Note: Debug assertions check zero_mask!=0 so check tests for comprehensive validation
-    Some(unsafe { NonZeroUsize::new_unchecked(zero_mask) })
+    Some(unsafe { NonZeroUsize::new_unchecked(classic) })
 }
 
 #[inline]
