@@ -125,8 +125,8 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             #[cfg(target_endian = "big")]
             let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
-            if let Some(lower) = maybe_match_lower {
-                let zero_byte_pos = find_first_nul(lower);
+            if let Some(lower_valid) = maybe_match_lower {
+                let zero_byte_pos = find_first_nul(lower_valid);
 
                 return Some(offset + zero_byte_pos);
             }
@@ -136,8 +136,8 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             #[cfg(target_endian = "big")]
             let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
 
-            if let Some(upper) = maybe_match_upper {
-                let zero_byte_pos = find_first_nul(upper);
+            if let Some(upper_valid) = maybe_match_upper {
+                let zero_byte_pos = find_first_nul(upper_valid);
 
                 return Some(offset + USIZE_BYTES + zero_byte_pos);
             }
@@ -332,6 +332,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
         // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr/memrchr in STD)
         let lower = unsafe { *(ptr.add(offset - 2 * USIZE_BYTES) as *const usize) };
+        // SAFETY: as above
         let upper = unsafe { *(ptr.add(offset - USIZE_BYTES) as *const usize) };
 
         // Break if there is a matching byte.
