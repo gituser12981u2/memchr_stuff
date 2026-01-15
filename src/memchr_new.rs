@@ -1,14 +1,57 @@
-// TODO? test on 32bit targets! (ok fuck 16 i dont think  rust even supports 16)
+// TODO? test benchmarks on 32bit targets, 64bit BE works but is extremely slow on VM.
 // Original implementation taken from https://doc.rust-lang.org/src/core/slice/memchr.rs.html
 
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8; //usize::repeat... is a private function in std lib internals, mock it up with this.
+// [u8;size_of::<usize>] ^
 
 // USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
 //https://doc.rust-lang.org/src/core/num/nonzero.rs.html#599
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
+
+// General test to show borrow fix works (move into test.rs later)
+#[test]
+fn generate_permutations_bit_manip() {
+    // Generate all combinations using bit representation.
+    // Each byte lane is either 0x00 or 0x80.
+    for mask in 0..(1usize << USIZE_BYTES) {
+        let mut bytes = [0u8; USIZE_BYTES];
+        for i in 0..USIZE_BYTES {
+            bytes[i] = if ((mask >> i) & 1) == 1 { 0x80 } else { 0x00 };
+        }
+
+        let expected = bytes.iter().position(|&b| b == 0);
+        let word = usize::from_ne_bytes(bytes);
+        let actual = contains_zero_byte_borrow_fix(word);
+
+        match expected {
+            None => {
+                assert!(
+                    actual.is_none(),
+                    "expected no zero byte but got a mask; bytes={bytes:?} word={word:#x}"
+                );
+            }
+            Some(pos) => {
+                let mask = actual.expect("expected a zero-byte mask");
+                let last_byte_pos = bytes.iter().rposition(|b| *b == 0).unwrap();
+
+                assert_eq!(
+                    pos,
+                    find_first_nul(mask),
+                    "first zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
+                );
+
+                assert_eq!(
+                    last_byte_pos,
+                    find_last_nul(mask),
+                    "first zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
+                );
+            }
+        }
+    }
+}
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
@@ -269,7 +312,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline(never)] // check inline semantics against STD
+#[inline] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
