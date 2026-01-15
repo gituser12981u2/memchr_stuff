@@ -132,8 +132,11 @@ mod tests {
             let word = usize::from_ne_bytes(*bytes);
 
             let expected_pos = bytes.iter().rposition(|&b| b == 0);
+            #[cfg(target_endian = "little")]
             let detected_pos =
                 crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_zero_byte);
+            #[cfg(target_endian = "big")]
+            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_last_zero_byte);
 
             assert_eq!(
                 detected_pos, expected_pos,
@@ -150,8 +153,12 @@ mod tests {
             let word = usize::from_ne_bytes(*bytes);
 
             let expected_pos = bytes.iter().position(|&b| b == 0);
+            #[cfg(target_endian = "little")]
             let detected_pos =
-                crate::memchr_new::contains_zero_byte_forward(word).map(find_first_zero_byte);
+                crate::memchr_new::contains_zero_byte(word).map(find_first_zero_byte);
+            #[cfg(target_endian = "big")]
+            let detected_pos =
+                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_first_zero_byte);
 
             assert_eq!(
                 detected_pos, expected_pos,

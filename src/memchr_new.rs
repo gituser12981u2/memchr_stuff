@@ -14,12 +14,7 @@ const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
 const USIZE_BYTES: usize = size_of::<usize>();
 
-// These 3 macros are just simple code deduplication tools. switch with functions if wanted.
-macro_rules! HASZERO {
-    ($num:expr) => {
-        ($num).wrapping_sub(LO_USIZE) & !($num) & HI_USIZE
-    };
-}
+// These 2 macros are just simple code deduplication tools. switch with functions if wanted.
 
 macro_rules! find_first_NUL {
     ($num:expr) => {{
@@ -49,16 +44,10 @@ macro_rules! find_last_NUL {
 }
 
 #[inline]
-#[cfg(target_endian = "little")]
-pub(crate) const fn contains_zero_byte_forward(input: usize) -> Option<NonZeroUsize> {
-    NonZeroUsize::new(HASZERO!(input))
-}
-
-#[inline]
-#[cfg(target_endian = "big")]
-pub(crate) const fn contains_zero_byte_forward(input: usize) -> Option<NonZeroUsize> {
-    contains_zero_byte_borrow_fix(input)
-    // Need to patch due to borrow fixes. WRITE THIS UP TODO!
+// Make this private eventually, only needed for tests (as public)
+pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
+    // Classic HASZERO trick. (Mycroft)
+    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE)
 }
 
 #[inline]
@@ -121,20 +110,34 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         // between the offset and the end of the slice.
         // the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr in STD)
         unsafe {
-            let u = *(ptr.add(offset) as *const usize);
-            let v = *(ptr.add(offset + USIZE_BYTES) as *const usize);
+            let lower = *(ptr.add(offset) as *const usize);
+            let upper = *(ptr.add(offset + USIZE_BYTES) as *const usize);
 
             // break if there is a matching byte
             // ! OPTIMIZATION !
             // check this branch first (lower has precedence, obvs)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
-            if let Some(lower) = contains_zero_byte_forward(u ^ repeated_x) {
+
+            // on forward search, we dont need to care about borrow propagation affecting trailing_zeros (ON LE)
+            #[cfg(target_endian = "little")]
+            let maybe_match_lower = contains_zero_byte(lower ^ repeated_x);
+            // unfortunately, we do here
+            #[cfg(target_endian = "big")]
+            let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
+
+            if let Some(lower) = maybe_match_lower {
                 let zero_byte_pos = find_first_NUL!(lower);
 
                 return Some(offset + zero_byte_pos);
             }
-            if let Some(upper) = contains_zero_byte_forward(v ^ repeated_x) {
+
+            #[cfg(target_endian = "little")]
+            let maybe_match_upper = contains_zero_byte(upper ^ repeated_x);
+            #[cfg(target_endian = "big")]
+            let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
+
+            if let Some(upper) = maybe_match_upper {
                 let zero_byte_pos = find_first_NUL!(upper);
 
                 return Some(offset + USIZE_BYTES + zero_byte_pos);
@@ -205,21 +208,7 @@ lacks the instruction and has to software emulate it. I trust LLVM maintainers t
 
 */
 
-#[cfg(target_endian = "little")]
-#[inline]
-pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
-    contains_zero_byte_borrow_fix(input)
-    // Need a different algorithmic approach
-}
-
-#[cfg(target_endian = "big")]
-#[inline]
-pub const fn contains_zero_byte_reversed(input: usize) -> Option<NonZeroUsize> {
-    NonZeroUsize::new(HASZERO!(input))
-    // No need to fix on BE due to 0xFF only propagating rightways
-}
-
-#[inline]
+#[inline(never)]
 #[must_use]
 pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
     // Hybrid approach:
@@ -232,20 +221,20 @@ pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize>
     // Classic SWAR: may contain false positives due to cross-byte borrow.
     // However considering that we want to check *as quickly* as possible, this is ideal.
 
-    let classic = HASZERO!(input);
+    let classic = input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE;
     if classic == 0 {
         return None;
     }
     // This function occurs a branch here contains zero byte doesn't, it delegates the branch
-    // to the memchr function, this is okay because a *branch still occurs*
+    // to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
 
     // Borrow-safe (carry-safe) SWAR:
     // mask off high bits so per-byte addition can't carry into the next byte.
-    // This adds an extra 4 instructions on x86 without BMI intrinsics (would be fewer with andn? same goes for standard SWAR)
+    // This adds an extra 3 instructions on x86 without BMI intrinsics (would be 2 with andn? same goes for standard SWAR)
     // Not falling into that trap!
-    let zero_mask = classic & !((input & LO_USIZE) << 7);
+    let zero_mask = classic & !(input << 7);
 
-    // Remove this *probably* due to debug checks already doing so(this just provides amore helpful warning)
+    // Remove this *probably* due to debug checks already doing so(this just provides a more helpful warning)
     debug_assert!(
         zero_mask != 0,
         "should never be 0 (checked by debug assertions in nonzerousize however too, just this is explicit)"
@@ -276,7 +265,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline] // check inline semantics against STD
+#[inline(never)] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
@@ -345,14 +334,26 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // **CHECK UPPER FIRST**
         //XOR to turn the matching bytes to NUL
         // This swar algorithm has the benefit of not propagating 0xFF rightwards/leftwards after a match is found
-        if let Some(num) = contains_zero_byte_reversed(upper ^ repeated_x) {
+
+        #[cfg(target_endian = "big")]
+        let maybe_match_upper = contains_zero_byte(upper ^ repeated_x);
+        #[cfg(target_endian = "little")]
+        // because of borrow issues propagating to LSB we need to do a fix for LE, not for BE though, slight win?!
+        let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
+
+        if let Some(num) = maybe_match_upper {
             let zero_byte_pos = find_last_NUL!(num);
 
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
 
-        // same as above
-        if let Some(num) = contains_zero_byte_reversed(lower ^ repeated_x) {
+        #[cfg(target_endian = "big")]
+        let maybe_match_lower = contains_zero_byte(lower ^ repeated_x);
+        #[cfg(target_endian = "little")]
+        let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
+
+        if let Some(num) = maybe_match_lower {
+            // replace this macro with actual definition if wanted
             let zero_byte_pos = find_last_NUL!(num);
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
