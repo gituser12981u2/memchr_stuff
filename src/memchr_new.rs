@@ -46,7 +46,7 @@ fn generate_permutations_bit_manip() {
                 assert_eq!(
                     last_byte_pos,
                     find_last_nul(mask),
-                    "first zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
+                    "last zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
                 );
             }
         }
