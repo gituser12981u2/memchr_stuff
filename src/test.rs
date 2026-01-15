@@ -9,7 +9,6 @@ const TEST_SIZE: usize = 10000;
 const RANDOM_SEED: u64 = 4269;
 const MAX_SIZED_STRING: usize = 20000;
 
-
 pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Vec<u8>> {
     let mut rng: Box<dyn RngCore> = if deterministic {
         Box::new(StdRng::seed_from_u64(RANDOM_SEED))
@@ -53,7 +52,10 @@ pub fn generate_random_usize_byte_arrays(
 mod tests {
 
     use super::*;
-    use crate::memchr_new::{find_first_nul, find_last_nul};
+    use crate::{
+        memchr_new::{find_first_nul, find_last_nul},
+        num::repeat_u8,
+    };
 
     fn test_memchr(search: u8, sl: &[u8]) {
         let memchrtest = crate::memchr_new::memchr(search, sl);
@@ -106,19 +108,21 @@ mod tests {
         let arrays = generate_random_usize_byte_arrays(TEST_SIZE, DETERMINISTIC);
 
         for bytes in arrays.iter() {
-            let word = usize::from_ne_bytes(*bytes);
+            for i in 0..=u8::MAX {
+                let word = usize::from_ne_bytes(*bytes) ^ repeat_u8(i);
 
-            let expected_pos = bytes.iter().rposition(|&b| b == 0);
-            #[cfg(target_endian = "little")]
-            let detected_pos =
-                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_nul);
-            #[cfg(target_endian = "big")]
-            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_last_nul);
+                let expected_pos = bytes.iter().rposition(|&b| b == i);
+                #[cfg(target_endian = "little")]
+                let detected_pos =
+                    crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_nul);
+                #[cfg(target_endian = "big")]
+                let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_last_nul);
 
-            assert_eq!(
-                detected_pos, expected_pos,
-                "Mismatch for word={word:#018x} bytes={bytes:?} in contains last zero byte!"
-            );
+                assert_eq!(
+                    detected_pos, expected_pos,
+                    "Mismatch for word={word:#018x} bytes={bytes:?} in contains last zero byte!"
+                );
+            }
         }
     }
 
@@ -127,19 +131,21 @@ mod tests {
         let arrays = generate_random_usize_byte_arrays(TEST_SIZE, DETERMINISTIC);
 
         for bytes in arrays.iter() {
-            let word = usize::from_ne_bytes(*bytes);
+            for i in 0..=u8::MAX {
+                let word = usize::from_ne_bytes(*bytes) ^ repeat_u8(i);
 
-            let expected_pos = bytes.iter().position(|&b| b == 0);
-            #[cfg(target_endian = "little")]
-            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_first_nul);
-            #[cfg(target_endian = "big")]
-            let detected_pos =
-                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_nul);
+                let expected_pos = bytes.iter().position(|&b| b == i);
+                #[cfg(target_endian = "little")]
+                let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_first_nul);
+                #[cfg(target_endian = "big")]
+                let detected_pos =
+                    crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_first_nul);
 
-            assert_eq!(
-                detected_pos, expected_pos,
-                "Mismatch for word={word:#018x} bytes={bytes:?} in contains zero byte!"
-            );
+                assert_eq!(
+                    detected_pos, expected_pos,
+                    "Mismatch for word={word:#018x} bytes={bytes:?} in contains zero byte!"
+                );
+            }
         }
     }
 }
