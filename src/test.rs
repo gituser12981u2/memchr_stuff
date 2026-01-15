@@ -8,8 +8,7 @@ const DETERMINISTIC: bool = true;
 const TEST_SIZE: usize = 10000;
 const RANDOM_SEED: u64 = 4269;
 const MAX_SIZED_STRING: usize = 20000;
-const USIZE_BYTES: usize = size_of::<usize>();
-use core::num::NonZeroUsize;
+
 
 pub fn generate_random_byte_strings(count: usize, deterministic: bool) -> Vec<Vec<u8>> {
     let mut rng: Box<dyn RngCore> = if deterministic {
@@ -50,33 +49,11 @@ pub fn generate_random_usize_byte_arrays(
     arrays
 }
 
-const fn find_last_zero_byte(num: NonZeroUsize) -> usize {
-    #[cfg(target_endian = "little")]
-    {
-        USIZE_BYTES - 1 - ((num.leading_zeros() >> 3) as usize)
-    }
-
-    #[cfg(target_endian = "big")]
-    {
-        USIZE_BYTES - 1 - ((num.trailing_zeros() >> 3) as usize)
-    }
-}
-
-const fn find_first_zero_byte(num: NonZeroUsize) -> usize {
-    #[cfg(target_endian = "little")]
-    {
-        (num.trailing_zeros() >> 3) as usize
-    }
-
-    #[cfg(target_endian = "big")]
-    {
-        (num.leading_zeros() >> 3) as usize
-    }
-}
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use crate::memchr_new::{find_first_nul, find_last_nul};
 
     fn test_memchr(search: u8, sl: &[u8]) {
         let memchrtest = crate::memchr_new::memchr(search, sl);
@@ -134,9 +111,9 @@ mod tests {
             let expected_pos = bytes.iter().rposition(|&b| b == 0);
             #[cfg(target_endian = "little")]
             let detected_pos =
-                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_zero_byte);
+                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_nul);
             #[cfg(target_endian = "big")]
-            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_last_zero_byte);
+            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_last_nul);
 
             assert_eq!(
                 detected_pos, expected_pos,
@@ -154,11 +131,10 @@ mod tests {
 
             let expected_pos = bytes.iter().position(|&b| b == 0);
             #[cfg(target_endian = "little")]
-            let detected_pos =
-                crate::memchr_new::contains_zero_byte(word).map(find_first_zero_byte);
+            let detected_pos = crate::memchr_new::contains_zero_byte(word).map(find_first_nul);
             #[cfg(target_endian = "big")]
             let detected_pos =
-                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_first_zero_byte);
+                crate::memchr_new::contains_zero_byte_borrow_fix(word).map(find_last_nul);
 
             assert_eq!(
                 detected_pos, expected_pos,

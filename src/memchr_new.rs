@@ -14,33 +14,32 @@ const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
 const USIZE_BYTES: usize = size_of::<usize>();
 
-// These 2 macros are just simple code deduplication tools. switch with functions if wanted.
+// Simple code simplification tools
 
-macro_rules! find_first_NUL {
-    ($num:expr) => {{
-        #[cfg(target_endian = "little")]
-        {
-            ($num.trailing_zeros() >> 3) as usize
-        }
+#[inline]
+pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
+    #[cfg(target_endian = "little")]
+    {
+        (num.trailing_zeros() >> 3) as usize
+    }
 
-        #[cfg(target_endian = "big")]
-        {
-            ($num.leading_zeros() >> 3) as usize
-        }
-    }};
+    #[cfg(target_endian = "big")]
+    {
+        (num.leading_zeros() >> 3) as usize
+    }
 }
 
-macro_rules! find_last_NUL {
-    ($num:expr) => {{
-        #[cfg(target_endian = "big")]
-        {
-            (USIZE_BYTES - 1 - (($num.trailing_zeros()) >> 3) as usize)
-        }
-        #[cfg(target_endian = "little")]
-        {
-            (USIZE_BYTES - 1 - (($num.leading_zeros()) >> 3) as usize)
-        }
-    }};
+#[inline]
+pub(crate) const fn find_last_nul(num: NonZeroUsize) -> usize {
+    #[cfg(target_endian = "big")]
+    {
+        USIZE_BYTES - 1 - ((num.trailing_zeros()) >> 3) as usize
+    }
+
+    #[cfg(target_endian = "little")]
+    {
+        USIZE_BYTES - 1 - ((num.leading_zeros()) >> 3) as usize
+    }
 }
 
 #[inline]
@@ -127,7 +126,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
             if let Some(lower) = maybe_match_lower {
-                let zero_byte_pos = find_first_NUL!(lower);
+                let zero_byte_pos = find_first_nul(lower);
 
                 return Some(offset + zero_byte_pos);
             }
@@ -138,7 +137,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
 
             if let Some(upper) = maybe_match_upper {
-                let zero_byte_pos = find_first_NUL!(upper);
+                let zero_byte_pos = find_first_nul(upper);
 
                 return Some(offset + USIZE_BYTES + zero_byte_pos);
             }
@@ -270,7 +269,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline] // check inline semantics against STD
+#[inline(never)] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
@@ -347,7 +346,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
 
         if let Some(num) = maybe_match_upper {
-            let zero_byte_pos = find_last_NUL!(num);
+            let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - USIZE_BYTES + zero_byte_pos);
         }
@@ -359,7 +358,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
         if let Some(num) = maybe_match_lower {
             // replace this macro with actual definition if wanted
-            let zero_byte_pos = find_last_NUL!(num);
+            let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
         }
