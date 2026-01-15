@@ -14,39 +14,69 @@ use core::num::NonZeroUsize;
 // General test to show borrow fix works (move into test.rs later)
 #[test]
 fn generate_permutations_bit_manip() {
-    // Generate all combinations using bit representation.
-    // Each byte lane is either 0x00 or 0x80.
-    for mask in 0..(1usize << USIZE_BYTES) {
+    const VALUES: [u8; 3] = [0x00, 0x01, 0x80];
+    let total = 3usize.pow(USIZE_BYTES as u32);
+
+    for mut state in 0..total {
         let mut bytes = [0u8; USIZE_BYTES];
         for i in 0..USIZE_BYTES {
-            bytes[i] = if ((mask >> i) & 1) == 1 { 0x80 } else { 0x00 };
+            let digit = state % 3;
+            state /= 3;
+            bytes[i] = VALUES[digit];
         }
 
-        let expected = bytes.iter().position(|&b| b == 0);
+        let expected_first = bytes.iter().position(|&b| b == 0);
+        let expected_last = bytes.iter().rposition(|&b| b == 0);
+
         let word = usize::from_ne_bytes(bytes);
-        let actual = contains_zero_byte_borrow_fix(word);
 
-        match expected {
-            None => {
-                assert!(
-                    actual.is_none(),
-                    "expected no zero byte but got a mask; bytes={bytes:?} word={word:#x}"
-                );
-            }
-            Some(pos) => {
-                let mask = actual.expect("expected a zero-byte mask");
-                let last_byte_pos = bytes.iter().rposition(|b| *b == 0).unwrap();
+        // Recompute the borrow-fix mask using the same logic as
+        // `contains_zero_byte_borrow_fix`.
+        let mut classic = word.wrapping_sub(LO_USIZE) & (!word) & HI_USIZE;
+        let expected_mask = if classic == 0 {
+            None
+        } else {
+            classic &= !(word << 7);
+            Some(unsafe { NonZeroUsize::new_unchecked(classic) })
+        };
 
+        let actual_mask = contains_zero_byte_borrow_fix(word);
+        assert_eq!(
+            expected_mask, actual_mask,
+            "borrow-fix mask mismatch; bytes={bytes:?} word={word:#x}"
+        );
+
+        match (expected_first, expected_last, actual_mask) {
+            (None, None, None) => {}
+            (Some(first), Some(last), Some(mask)) => {
                 assert_eq!(
-                    pos,
+                    first,
                     find_first_nul(mask),
                     "first zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
                 );
-
                 assert_eq!(
-                    last_byte_pos,
+                    last,
                     find_last_nul(mask),
                     "last zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
+                );
+
+                // Strong property: every 0x80 bit in the mask must correspond
+                // to a real 0x00 byte lane!
+                for i in 0..USIZE_BYTES {
+                    let lane_bit = ((mask.get() >> (i * 8)) & 0x80) != 0;
+                    if lane_bit {
+                        assert_eq!(
+                            0x00,
+                            bytes[i],
+                            "false-positive lane bit at index {i}; bytes={bytes:?} word={word:#x} mask={:#x}",
+                            mask.get()
+                        );
+                    }
+                }
+            }
+            _ => {
+                panic!(
+                    "expected/actual mismatch; bytes={bytes:?} word={word:#x} expected_first={expected_first:?} expected_last={expected_last:?} actual_mask={actual_mask:?}"
                 );
             }
         }
