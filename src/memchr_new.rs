@@ -208,7 +208,7 @@ lacks the instruction and has to software emulate it. I trust LLVM maintainers t
 
 */
 
-#[inline(never)]
+#[inline]
 #[must_use]
 pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
     // Hybrid approach:
@@ -234,16 +234,11 @@ pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize>
     // Not falling into that trap!
     let zero_mask = classic & !(input << 7);
 
-    // Remove this *probably* due to debug checks already doing so(this just provides a more helpful warning)
-    debug_assert!(
-        zero_mask != 0,
-        "should never be 0 (checked by debug assertions in nonzerousize however too, just this is explicit)"
-    );
-
     // SAFETY: `classic != 0` implies there is at least one real zero byte
     // somewhere in the word (false positives only occur alongside a real zero
     // due to borrow propagation), so `zero_mask` must be non-zero.
     // Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
+    // Note: Debug assertions check zero_mask!=0 so check tests for comprehensive validation
     Some(unsafe { NonZeroUsize::new_unchecked(zero_mask) })
 }
 
@@ -265,7 +260,7 @@ const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> O
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline(never)] // check inline semantics against STD
+#[inline] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
