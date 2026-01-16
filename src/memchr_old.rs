@@ -1,5 +1,7 @@
 // Original implementation taken from rust-memchr.
 // Copyright 2015 Andrew Gallant, bluss and Nicolas Koch
+//https://doc.rust-lang.org/src/core/slice/memchr.rs.html
+
 use core::intrinsics::const_eval_select;
 
 use crate::num::repeat_u8;
@@ -28,8 +30,9 @@ pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     if text.len() < 2 * USIZE_BYTES {
         return memchr_naive(x, text);
     }
-
-    memchr_aligned(x, text)
+    // The runtime version behaves the same as the compiletime version, it's just more optimized.
+    const_eval_select((x, text), memchr_naive, memchr_aligned)
+    // EDIT notes: just optimised
 }
 
 #[inline]
@@ -48,17 +51,12 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     None
 }
 
-#[inline]
-const fn memchr_aligned_in_const(x: u8, text: &[u8]) -> Option<usize> {
-    memchr_naive(x, text)
-}
-
 #[allow(
     clippy::manual_map,
     clippy::option_if_let_else,
     reason = "faithful to std"
 )] // as above
-fn memchr_aligned_at_rt(x: u8, text: &[u8]) -> Option<usize> {
+fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //
     // Split `text` in three parts
@@ -108,12 +106,6 @@ fn memchr_aligned_at_rt(x: u8, text: &[u8]) -> Option<usize> {
     }
 }
 
-#[inline]
-const fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
-    // The runtime version behaves the same as the compiletime version, it's just more optimized.
-    const_eval_select((x, text), memchr_aligned_in_const, memchr_aligned_at_rt)
-}
-
 /// Returns the last index matching the byte `x` in `text`.
 #[must_use]
 #[allow(
@@ -121,6 +113,7 @@ const fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     clippy::manual_map,
     reason = "faithful to std"
 )]
+#[inline]
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //

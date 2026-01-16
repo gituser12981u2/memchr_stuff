@@ -1,9 +1,14 @@
-// TODO? test benchmarks on 32bit targets, 64bit BE works but is extremely slow on VM.
+// TODO? test benchmarks on 32bit targets, 64bit BE works but is extremely slow on VM (thus benchmarks by emulation are not ideal.)
 // Original implementation taken from https://doc.rust-lang.org/src/core/slice/memchr.rs.html
+
+//Check comprehensive tests in ./test.rs please
 
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8; //usize::repeat... is a private function in std lib internals, mock it up with this.
 // [u8;size_of::<usize>] ^
+
+// to match with STD
+use core::intrinsics::const_eval_select;
 
 // USE THIS TO ENABLE BETTER INTRINSICS AKA CTLZ_NONZERO/CTTZ_NONZERO
 use core::num::NonZeroUsize;
@@ -11,85 +16,12 @@ use core::num::NonZeroUsize;
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.ctlz_nonzero.html
 //https://doc.rust-lang.org/beta/std/intrinsics/fn.cttz_nonzero.html
 
-// General test to show borrow fix works (move into test.rs later)
-#[test]
-fn generate_permutations_bit_manip() {
-    const VALUES: [u8; 3] = [0x00, 0x01, 0x80];
-    let total = 3usize.pow(USIZE_BYTES as u32);
-
-    for mut state in 0..total {
-        let mut bytes = [0u8; USIZE_BYTES];
-        for i in 0..USIZE_BYTES {
-            let digit = state % 3;
-            state /= 3;
-            bytes[i] = VALUES[digit];
-        }
-
-        let expected_first = bytes.iter().position(|&b| b == 0);
-        let expected_last = bytes.iter().rposition(|&b| b == 0);
-
-        let word = usize::from_ne_bytes(bytes);
-
-        // Recompute the borrow-fix mask using the same logic as
-        // `contains_zero_byte_borrow_fix`.
-        let mut classic = word.wrapping_sub(LO_USIZE) & (!word) & HI_USIZE;
-        let expected_mask = if classic == 0 {
-            None
-        } else {
-            classic &= !(word << 7);
-            Some(unsafe { NonZeroUsize::new_unchecked(classic) })
-        };
-
-        let actual_mask = contains_zero_byte_borrow_fix(word);
-        assert_eq!(
-            expected_mask, actual_mask,
-            "borrow-fix mask mismatch; bytes={bytes:?} word={word:#x}"
-        );
-
-        match (expected_first, expected_last, actual_mask) {
-            (None, None, None) => {}
-            (Some(first), Some(last), Some(mask)) => {
-                assert_eq!(
-                    first,
-                    find_first_nul(mask),
-                    "first zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
-                );
-                assert_eq!(
-                    last,
-                    find_last_nul(mask),
-                    "last zero-byte index mismatch; bytes={bytes:?} word={word:#x}"
-                );
-
-                // Strong property: every 0x80 bit in the mask must correspond
-                // to a real 0x00 byte lane!
-                for i in 0..USIZE_BYTES {
-                    let lane_bit = ((mask.get() >> (i * 8)) & 0x80) != 0;
-                    if lane_bit {
-                        assert_eq!(
-                            0x00,
-                            bytes[i],
-                            "false-positive lane bit at index {i}; bytes={bytes:?} word={word:#x} mask={:#x}",
-                            mask.get()
-                        );
-                    }
-                }
-            }
-            _ => {
-                panic!(
-                    "expected/actual mismatch; bytes={bytes:?} word={word:#x} expected_first={expected_first:?} expected_last={expected_last:?} actual_mask={actual_mask:?}"
-                );
-            }
-        }
-    }
-}
-
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
 const USIZE_BYTES: usize = size_of::<usize>();
 
 // Simple code simplification tools
-
-#[inline]
+// auto inlined by rust
 pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "little")]
     {
@@ -101,8 +33,7 @@ pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
         (num.leading_zeros() >> 3) as usize
     }
 }
-
-#[inline]
+// auto inlined by rust
 pub(crate) const fn find_last_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "big")]
     {
@@ -119,18 +50,19 @@ pub(crate) const fn find_last_nul(num: NonZeroUsize) -> usize {
 // Make this private eventually, only needed for tests (as public)
 pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
     // Classic HASZERO trick. (Mycroft)
-    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE)
+    NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
 }
 
 #[inline]
 #[must_use]
-pub fn memchr(x: u8, text: &[u8]) -> Option<usize> {
+pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     // Fast path for small slices.
     if text.len() < 2 * USIZE_BYTES {
         return memchr_naive(x, text);
     }
 
-    memchr_aligned(x, text)
+    // The runtime version behaves the same as the compiletime version, it's just more optimized.
+    const_eval_select((x, text), memchr_naive, memchr_aligned)
 }
 
 #[inline]
@@ -192,9 +124,10 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
 
             // on forward search, we dont need to care about borrow propagation affecting trailing_zeros (ON LE)
+            // However we do have to care about borrow propagation on BE
             #[cfg(target_endian = "little")]
             let maybe_match_lower = contains_zero_byte(lower ^ repeated_x);
-            // unfortunately, we do here
+            // Luckily, it's the same number of operations to check for 0 byte as original memchr, woo!
             #[cfg(target_endian = "big")]
             let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
@@ -237,8 +170,6 @@ https://github.com/lancetw/ebook-1/blob/master/02_algorithm/Hacker%27s%20Delight
 
 WE DONT USE zbyter because it requires A LOT more instructions to check for 0 byte,
 
-I havent tested the mycro one, seems interesting though. I believe its meant for big endian however hence the comment
-
 "
 
 executes in only five instructions exclusive of loading the constants if the machine
@@ -250,8 +181,6 @@ x), because of a problem with borrows. It would be most useful for  <<----------
 finding the first 0-byte in a character string on a little-endian machine, or to simply test
 for a 0-byte (using only the assignment to y) on a machine of either endianness.
 "
-
-
 int zbytel(unsigned x) {
 unsigned y;
 int n;
@@ -270,73 +199,56 @@ procedure above with:
 Click here to view code image
 n = (32 - nlz(~y & (y - 1))) >> 3;
 
-
-.
-
-
 **ALSO NOTE, NO POINT REIMPLEMENTING TRAILING/LEADING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
 lacks the instruction and has to software emulate it. I trust LLVM maintainers to be a lot better than me at this!**
 
-
 */
 
-#[inline]
+// compiler automatically inlines this
 #[must_use]
-pub const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
-    // Hybrid approach:
-    // 1) Use the classic SWAR test as a cheap early-out for the common case
-    //    where there are no zero bytes.
-    // 2) If the classic test indicates a possible match, compute a borrow/carry-
-    //    safe mask that cannot produce cross-byte false positives. This matters
-    //    for reverse search where we pick the *last* match.
+pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
+    /*
+    Hybrid approach:
+    1) Use the classic SWAR test as a cheap early-out for the common case
+       where there are no zero bytes.
+    2) If the classic test indicates a possible match, compute a borrow/carry-
+       safe mask that cannot produce cross-byte false positives. This matters
+       for reverse search where we pick the *last* match.
 
-    // Classic SWAR: may contain false positives due to cross-byte borrow.
-    // However considering that we want to check *as quickly* as possible, this is ideal.
-
-    let mut classic = input.wrapping_sub(LO_USIZE) & (!input) & HI_USIZE;
+    Classic SWAR: may contain false positives due to cross-byte borrow.
+    However considering that we want to check *as quickly* as possible, this is ideal.
+    */
+    let mut classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
     if classic == 0 {
         return None;
     }
-    // This function occurs a branch here contains zero byte doesn't, it delegates the branch
-    // to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
+    /*
+    This function occurs a branch here contains zero byte doesn't, it delegates the branch
+    to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
 
-    // Borrow-safe (carry-safe) SWAR:
-    //
-    // The classic HASZERO mask is perfect for a boolean “any zero byte?” check, but the *per-byte* mask
-    // can contain extra 0x80 bits when the subtraction `input - 0x01..` borrows across byte lanes.
-    // That’s a problem here because we don’t just test “non-zero?” — we feed the mask into
-    // `leading_zeros`/`trailing_zeros` to pick an actual byte index.
-    //
-    // Example (two adjacent bytes, lowest first):
-    // - `input = [0x00, 0x01]`
-    // - subtracting `0x01..` borrows from the `0x00` byte into the next byte, so the classic mask may
-    //   report both bytes as candidates even though only the first byte is truly zero.
-    //
-    // `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
-    // 0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.
+    Borrow-safe (carry-safe) SWAR:
+
+    The classic HASZERO mask is perfect for a boolean “any zero byte?” check, but the *per-byte* mask
+    can contain extra 0x80 bits when the subtraction `input - 0x01..` borrows across byte lanes.
+    That’s a problem here because we don’t just test “non-zero?” — we feed the mask into
+    `leading_zeros`/`trailing_zeros` to pick an actual byte index.
+
+    Example (two adjacent bytes, lowest first):
+    - `input = [0x00, 0x01]`
+    - subtracting `0x01..` borrows from the `0x00` byte into the next byte, so the classic mask may
+      report both bytes as candidates even though only the first byte is truly zero.
+
+    `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
+    0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.*/
     classic &= !(input << 7);
-
-    // SAFETY: `classic != 0` implies there is at least one real zero byte
-    // somewhere in the word (false positives only occur alongside a real zero
-    // due to borrow propagation), so `zero_mask` must be non-zero.
-    // Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
-    // Note: Debug assertions check zero_mask!=0 so check tests for comprehensive validation
+    /*
+    SAFETY: `classic != 0` implies there is at least one real zero byte
+    somewhere in the word (false positives only occur alongside a real zero
+    due to borrow propagation), so `zero_mask` must be non-zero.
+    Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
+    Note: Debug assertions check zero_mask!=0 so check tests for comprehensive validation
+    */
     Some(unsafe { NonZeroUsize::new_unchecked(classic) })
-}
-
-#[inline]
-// Check assembly to see if we need this Adrian, you did it lol.
-// 1 fewer instruction using this, need to look at more.
-const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
-    let mut i = len;
-    while i != 0 {
-        i -= 1;
-        // SAFETY: trivially within bounds
-        if unsafe { base.add(i).read() } == needle {
-            return Some(i);
-        }
-    }
-    None
 }
 
 /// Returns the last index matching the byte `x` in `text`.
@@ -376,21 +288,19 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
     let mut offset = max_aligned_offset;
 
-    let start = text.as_ptr();
-    let tail_len = len - offset; // tail is [offset, len)
-    // SAFETY: trivially within bounds
-    if let Some(i) = unsafe { rposition_byte_len(start.add(offset), tail_len, x) } {
-        return Some(offset + i);
-    }
-    /*
-    This adds an extra ~10 instructions!(on x86 v1) (from std.) definitely worthwhile to avoid!
+    // Skip the checked indexing, adds ~10 instructions!
 
-     if let Some(index) = text[offset..].iter().rposition(|elt| *elt == x) {
+    /*
+    SAFETY: `offset` is computed as `len - suffix.len()`, so `offset <= len`.
+    Therefore the range `offset..` is a valid subslice of `text`.
+    */
+    if let Some(index) = unsafe {
+        text.get_unchecked(offset..)
+            .iter()
+            .rposition(|elt| *elt == x)
+    } {
         return Some(offset + index);
     }
-
-
-     */
 
     // Search the body of the text, make sure we don't cross min_aligned_offset.
 
@@ -431,7 +341,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
         if let Some(num) = maybe_match_lower {
-            // replace this macro with actual definition if wanted
+            // replace this function with actual definition if wanted
             let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
@@ -439,7 +349,15 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
         offset -= 2 * USIZE_BYTES;
     }
-    // SAFETY: trivially within bounds
-    // Find the byte before the point the body loop stopped.
-    unsafe { rposition_byte_len(start, offset, x) }
+    // Find the last match in the remaining prefix.
+    /*
+     SAFETY: `offset` is monotonically decreased from `max_aligned_offset <= len`,
+     and the loop condition guarantees `offset >= min_aligned_offset >= 0`.
+     Thus `..offset` is always a valid range for `text`.
+    */
+    unsafe {
+        text.get_unchecked(..offset)
+            .iter()
+            .rposition(|elt| *elt == x)
+    }
 }
