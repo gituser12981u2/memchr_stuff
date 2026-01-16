@@ -254,7 +254,6 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
-#[inline] // check inline semantics against STD
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 

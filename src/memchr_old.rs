@@ -113,7 +113,6 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     clippy::manual_map,
     reason = "faithful to std"
 )]
-#[inline]
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
     //

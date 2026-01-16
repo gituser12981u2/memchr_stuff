@@ -128,7 +128,7 @@ fn bench_memrchr(c: &mut Criterion) {
 
             group.bench_with_input(
                 BenchmarkId::new(
-                    format!("old/{}/{}", placement.name(), alignment_label(size)),
+                    format!("std/{}/{}", placement.name(), alignment_label(size)),
                     size,
                 ),
                 &data,
@@ -175,7 +175,7 @@ fn bench_memchr(c: &mut Criterion) {
 
             group.bench_with_input(
                 BenchmarkId::new(
-                    format!("old/{}/{}", placement.name(), alignment_label(size)),
+                    format!("std/{}/{}", placement.name(), alignment_label(size)),
                     size,
                 ),
                 &data,
