@@ -63,7 +63,7 @@ for root, dirs, files in os.walk(criterion_dir):
     )
 
 
-pairs = {}  # (group_id, key) -> {"old": rec, "new": rec}
+pairs = {} 
 singles = []
 
 for rec in records:
@@ -85,7 +85,7 @@ for rec in records:
         continue
 
     variant = rest[0]
-    if variant in ("old", "new"):
+    if variant in ("std", "new"):
         key = "/".join(rest[1:])
         bucket = pairs.setdefault((group_id or parts[0], key), {})
         bucket[variant] = rec
@@ -96,28 +96,28 @@ print(f"Criterion summary from: {criterion_dir}\n")
 
 pair_rows = []
 for (group_id, key), bucket in pairs.items():
-    if "old" in bucket and "new" in bucket:
-        old = bucket["old"]
+    if "std" in bucket and "new" in bucket:
+        std = bucket["std"]
         new = bucket["new"]
-        speedup = old["mean_ns"] / new["mean_ns"] if new["mean_ns"] else float("inf")
-        delta_pct = (new["mean_ns"] - old["mean_ns"]) / old["mean_ns"] * 100.0 if old["mean_ns"] else 0.0
-        pair_rows.append((group_id, key, old["mean_ns"], new["mean_ns"], speedup, delta_pct))
+        speedup = std["mean_ns"] / new["mean_ns"] if new["mean_ns"] else float("inf")
+        delta_pct = (new["mean_ns"] - std["mean_ns"]) / std["mean_ns"] * 100.0 if std["mean_ns"] else 0.0
+        pair_rows.append((group_id, key, std["mean_ns"], new["mean_ns"], speedup, delta_pct))
 
 pair_rows.sort(key=lambda r: (r[0], r[1]))
 
 if pair_rows:
-    print("OLD vs NEW (mean time; lower is better)")
-    print(f"{'group':<18} {'case':<44} {'old(ns)':>10} {'new(ns)':>10} {'speedup':>9} {'delta%':>8}")
-    for group, key, old_ns, new_ns, speedup, delta_pct in pair_rows:
-        print(f"{group:<18} {key:<44} {old_ns:>10.4f} {new_ns:>10.4f} {speedup:>9.3f} {delta_pct:>8.2f}")
+    print("std vs NEW (mean time; lower is better)")
+    print(f"{'group':<18} {'case':<44} {'std(ns)':>10} {'new(ns)':>10} {'speedup':>9} {'delta%':>8}")
+    for group, key, std_ns, new_ns, speedup, delta_pct in pair_rows:
+        print(f"{group:<18} {key:<44} {std_ns:>10.4f} {new_ns:>10.4f} {speedup:>9.3f} {delta_pct:>8.2f}")
     print("")
 
 unmatched = []
 for (group_id, key), bucket in pairs.items():
-    if "old" in bucket and "new" not in bucket:
+    if "std" in bucket and "new" not in bucket:
         unmatched.append((group_id, key, "missing new"))
-    if "new" in bucket and "old" not in bucket:
-        unmatched.append((group_id, key, "missing old"))
+    if "new" in bucket and "std" not in bucket:
+        unmatched.append((group_id, key, "missing std"))
 
 unmatched.sort(key=lambda r: (r[0], r[1]))
 if unmatched:
@@ -130,7 +130,7 @@ if unmatched:
 
 if singles:
     singles.sort(key=lambda r: (r["group_id"], r["full_id"]))
-    print("Other benchmarks (no old/new pairing detected):")
+    print("Other benchmarks (no std/new pairing detected):")
     print(f"{'group':<18} {'id':<60} {'mean(ns)':>10}")
     for rec in singles[:200]:
         print(f"{rec['group_id']:<18} {rec['full_id']:<60} {rec['mean_ns']:>10.4f}")

@@ -1,2 +1,8 @@
 #!/usr/bin/env bash
-RUSTFLAGS="-C target-cpu=native" cargo bench 
+
+
+cd "$(dirname "$0")" || exit
+
+RUSTFLAGS="-C target-cpu=native" cargo bench
+
+./summarise_bench.sh > bench_optimisations.txt
