@@ -20,8 +20,7 @@ const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
 const USIZE_BYTES: usize = size_of::<usize>();
 
-// Simple code simplification tools
-// auto inlined by rust EDIT: not necessarily
+// Simple code simplification tools (replace with in the functions if wanted)
 #[inline]
 pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "little")]
@@ -34,7 +33,7 @@ pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
         (num.leading_zeros() >> 3) as usize
     }
 }
-// auto inlined by rust
+// as above
 #[inline]
 pub(crate) const fn find_last_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "big")]
