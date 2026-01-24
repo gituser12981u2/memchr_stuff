@@ -21,7 +21,8 @@ const HI_USIZE: usize = repeat_u8(0x80);
 const USIZE_BYTES: usize = size_of::<usize>();
 
 // Simple code simplification tools
-// auto inlined by rust
+// auto inlined by rust EDIT: not necessarily
+#[inline]
 pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "little")]
     {
@@ -34,6 +35,7 @@ pub(crate) const fn find_first_nul(num: NonZeroUsize) -> usize {
     }
 }
 // auto inlined by rust
+#[inline]
 pub(crate) const fn find_last_nul(num: NonZeroUsize) -> usize {
     #[cfg(target_endian = "big")]
     {
@@ -82,7 +84,6 @@ const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     None
 }
 
-#[inline]
 fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     // The runtime version behaves the same as the compile time version, it's
     // just more optimized.
@@ -100,6 +101,8 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     let mut offset = ptr.align_offset(USIZE_BYTES);
 
     if offset > 0 {
+        // TEST this? for the unaligned head, if overall len>8, we could do an unaligned read and check for zero bytes in that
+        // Although that *WOULD* require generating the repeated constant, an unaligned load, etc... maybe not worth the complexity.
         offset = offset.min(len);
         let slice = &text[..offset]; //compiler elides checks on this, no panic branch.
         if let Some(index) = memchr_naive(x, slice) {
@@ -107,7 +110,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         }
     }
 
-    // search the body of the text
+    // search the (aligned)body of the text
     let repeated_x = repeat_u8(x);
     while offset <= len - 2 * USIZE_BYTES {
         // SAFETY: the while's predicate guarantees a distance of at least 2 * usize_bytes
@@ -117,9 +120,8 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let lower = *(ptr.add(offset) as *const usize);
             let upper = *(ptr.add(offset + USIZE_BYTES) as *const usize);
 
-            // break if there is a matching byte
-            // ! OPTIMIZATION !
-            // check this branch first (lower has precedence, obvs)
+        
+            // check this branch first (lower has precedence, obvs, we want the FIRST match)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
 
@@ -132,8 +134,9 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
             if let Some(lower_valid) = maybe_match_lower {
+                // Replace with actual definition if wanted
                 let zero_byte_pos = find_first_nul(lower_valid);
-
+                // Early return on finding the first NUL
                 return Some(offset + zero_byte_pos);
             }
 
@@ -152,11 +155,11 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         offset += USIZE_BYTES * 2;
     }
 
-    // Find the byte after the point the body loop stopped.
+    // Find the byte in the unaligned tail if not already found in the aligned loop.
 
     let slice =
             // SAFETY: offset is within bounds
-                unsafe { core::slice::from_raw_parts(text.as_ptr().add(offset), text.len() - offset) };
+                unsafe { core::slice::from_raw_parts(ptr.add(offset), len - offset) };
 
     memchr_naive(x, slice).map(|i| offset + i)
 }
@@ -186,7 +189,7 @@ unsigned y;
 int n;
 // Original byte: 00 80 other
 y = (x & 0x7F7F7F7F)+ 0x7F7F7F7F; // 7F 7F 1xxxxxxx
-y = ~(y 1 x 1 0x7F7F7F7F); // 80 00 00000000
+y = ~(y | x | 0x7F7F7F7F); // 80 00 00000000
 n = nlz(y) >> 3; // n = 0 ... 4, 4 if x
 return n; // has no 0-byte.
 }
@@ -204,7 +207,7 @@ lacks the instruction and has to software emulate it. I trust LLVM maintainers t
 
 */
 
-// compiler automatically inlines this
+#[inline]
 #[must_use]
 pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
     /*
@@ -223,7 +226,7 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
         return None;
     }
     /*
-    This function occurs a branch here contains zero byte doesn't, it delegates the branch
+    This function occurs a branch here meanwhile contains_zero_byte doesn't, it delegates the branch
     to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
 
     Borrow-safe (carry-safe) SWAR:
@@ -241,12 +244,25 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
     `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
     0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.*/
     classic &= !(input << 7);
+    // I didn't find this approach anywhere online, took a lot of work!
+    // This approach adds an extra 3 instructions (or 2 if architecture has andn)
+    // Meanwhile the typical approach in http://0x80.pl/notesen/2016-11-28-simd-strfind.html#swar
+    /*
+
+    // 7th bit set if lower 7 bits are zero
+    const uint64_t t0 = (~x & 0x7f7f7f7f7f7f7f7fllu) + 0x0101010101010101llu;
+    // 7th bit set if 7th bit is zero
+    const uint64_t t1 = (~x & 0x8080808080808080llu);
+    uint64_t zeros = t0 & t1;
+    */
+    // involves 3 mov's as opposed to only needing 2 MOV's here. It does 1 less ALU instruction than my approach but doesnt use an early 'OUT'
+    // which is critical for memchr/memrchr
     /*
     SAFETY: `classic != 0` implies there is at least one real zero byte
     somewhere in the word (false positives only occur alongside a real zero
-    due to borrow propagation), so `zero_mask` must be non-zero.
+    due to borrow propagation), so  now `classic` must be non-zero.
     Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
-    Note: Debug assertions check zero_mask!=0 so check tests for comprehensive validation
+    Note: Debug assertions check classic!=0 so check tests for comprehensive validation
     */
     Some(unsafe { NonZeroUsize::new_unchecked(classic) })
 }
@@ -314,6 +330,8 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
         // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr/memrchr in STD)
         let lower = unsafe { *(ptr.add(offset - 2 * USIZE_BYTES) as *const usize) };
+        // I would write this as the below, unfortunately I want to keep semantics(although trivial, in track with STDLIB)
+        // let lower = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
         // SAFETY: as above
         let upper = unsafe { *(ptr.add(offset - USIZE_BYTES) as *const usize) };
 
@@ -329,6 +347,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
 
         if let Some(num) = maybe_match_upper {
+            // replace this function with actual definition if wanted
             let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - USIZE_BYTES + zero_byte_pos);
@@ -340,7 +359,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
 
         if let Some(num) = maybe_match_lower {
-            // replace this function with actual definition if wanted
+            // as above.
             let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
