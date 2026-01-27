@@ -208,8 +208,8 @@ fn bench_memchr(c: &mut Criterion) {
 criterion_group!(
     name = benches;
     config = Criterion::default()
-        .warm_up_time(Duration::from_millis(200))
-        .measurement_time(Duration::from_millis(1000))
+        .warm_up_time(Duration::from_millis(100))
+        .measurement_time(Duration::from_millis(15000))
         .sample_size(10000)
         .configure_from_args();
     targets = bench_memrchr, bench_memchr
