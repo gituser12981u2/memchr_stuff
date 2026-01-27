@@ -171,6 +171,7 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 // TODO test if can get compiler to generate vectorised instructions
 // without using intrinsics
 // Then do this for SSE2/loong arch
+// as seen in approach here https://github.com/rust-lang/rust/blob/94a0cd15f5976fa35e5e6784e621c04e9f958e57/library/core/src/slice/ascii.rs#L582
 
 // install this for testing when I get a new PC
 // https://www.qemu.org/docs/master/system/target-loongarch.html
@@ -179,24 +180,30 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 // SSE2 is baseline on x86_64, so we can use it for optimised memchr
 #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
-    use core::arch::x86_64::{__m128i, _mm_cmpeq_epi8, _mm_load_si128, _mm_movemask_epi8,_mm_set1_epi8};
+    use core::arch::x86_64::{__m128i as Element};
+    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
+    use core::arch::x86_64::_mm_cmpeq_epi8 as COMPARE;
+    use core::arch::x86_64::_mm_load_si128 as LOAD_ALIGNED;
+    use core::arch::x86_64::_mm_movemask_epi8 as  MOVEMASK;
     use core::num::NonZeroI32;
-    const SSE2_ALIGNMENT: usize = 16;  // __m128i requires 16-byte alignment
-    const SSE2_CHUNK_SIZE: usize = 64;  // Process 4x 16-byte chunks at a time
+
+ 
+    const ALIGNMENT: usize = align_of::<Element>();  
+    const CHUNK_SIZE: usize = 4*ALIGNMENT;  // Process 4x  chunks at a time
     // The runtime version behaves the same as the compile time version, it's
     // just more optimised.
 
-    // Scan for a single byte value by reading SSE2 registers at a time.
+    // Scan for a single byte value by reading 4 SIMD registers at a time.
     //
     // Split `text` in three parts
-    // - unaligned initial part, before the first 16-byte aligned address in text
-    // - body, scan by 4x 16-byte chunks at a time
-    // - the last remaining part, < 64 bytes
+    // - unaligned initial part, before the first  aligned address in text
+    // - body, scan by 4x Alignment sized chunks at a time
+    // - the last remaining part, < `CHUNK_SIZE`
 
     // search up to an aligned boundary
     let len = text.len();
     let ptr = text.as_ptr();
-    let mut offset = ptr.align_offset(SSE2_ALIGNMENT);
+    let mut offset = ptr.align_offset(ALIGNMENT);
 
     if offset > 0 {
         offset = offset.min(len);
@@ -206,55 +213,52 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
         }
     }
 
-    // search the (aligned) body of the text using SSE2
+    // search the (aligned) body of the text using intrinsics
     unsafe {
-        let needle = _mm_set1_epi8(x.cast_signed());
+        let needle = BROADCAST(x.cast_signed());
         
-        while offset + SSE2_CHUNK_SIZE <= len {
-            // SAFETY: the while's predicate guarantees a distance of at least SSE2_CHUNK_SIZE bytes
+        while offset + CHUNK_SIZE <= len {
+            // SAFETY: the while's predicate guarantees a distance of at least CHUNK_SIZE bytes
             // between the offset and the end of the slice.
-            // The pointer is aligned to SSE2_CHUNK_SIZE boundary.
-            let chunk_ptr = ptr.add(offset).cast::<__m128i>();
+            // The pointer is aligned to CHUNK_SIZE boundary.
+
+           
+            let chunk_ptr = ptr.add(offset).cast::<Element>();
+           //debug_assert!(chunk_ptr.is_aligned_to(ALIGNMENT));
             
-            // Load 4x 16-byte aligned chunks (64 bytes total)
-            let chunk0 = _mm_load_si128(chunk_ptr);
-            let chunk1 = _mm_load_si128(chunk_ptr.add(1));
-            let chunk2 = _mm_load_si128(chunk_ptr.add(2));
-            let chunk3 = _mm_load_si128(chunk_ptr.add(3));
+            // Load 4x ALIGNMENT sized -byte aligned chunks 
+            let chunk0 = LOAD_ALIGNED(chunk_ptr);
+            let chunk1 = LOAD_ALIGNED(chunk_ptr.add(1));
+            let chunk2 = LOAD_ALIGNED(chunk_ptr.add(2));
+            let chunk3 = LOAD_ALIGNED(chunk_ptr.add(3));
             
             // Compare each chunk with needle
-            let cmp0 = _mm_cmpeq_epi8(chunk0, needle);
-            let cmp1 = _mm_cmpeq_epi8(chunk1, needle);
-            let cmp2 = _mm_cmpeq_epi8(chunk2, needle);
-            let cmp3 = _mm_cmpeq_epi8(chunk3, needle);
+            let cmp0 = COMPARE(chunk0, needle);
+            let cmp1 = COMPARE(chunk1, needle);
+            let cmp2 = COMPARE(chunk2, needle);
+            let cmp3 = COMPARE(chunk3, needle);
             
             // Get bitmasks for each comparison and use a smarter intrinsic to use cttz_nonzero
-            let mask0 = NonZeroI32::new(_mm_movemask_epi8(cmp0));
-            let mask1 = NonZeroI32::new(_mm_movemask_epi8(cmp1));
-            let mask2 = NonZeroI32::new(_mm_movemask_epi8(cmp2));
-            let mask3 = NonZeroI32::new(_mm_movemask_epi8(cmp3));
-            
             // Check each mask in order (first match wins)
-            // vmask=valid mask, just lazy!
-            if let Some(vmask0)=mask0 {
+            if let Some(vmask0)=NonZeroI32::new(MOVEMASK(cmp0)) {
                 let byte_pos = vmask0.trailing_zeros() as usize;
                 return Some(offset + byte_pos);
             }
-            if let Some(vmask1)=mask1 {
+            if let Some(vmask1)=NonZeroI32::new(MOVEMASK(cmp1)){
                 let byte_pos = vmask1.trailing_zeros() as usize;
-                return Some(offset +16+ byte_pos);
+                return Some(offset +ALIGNMENT+ byte_pos);
             }
 
-          if let Some(vmask2)=mask2 {
+          if let Some(vmask2)=NonZeroI32::new(MOVEMASK(cmp2)){
                 let byte_pos = vmask2.trailing_zeros() as usize;
-                return Some(offset +32+ byte_pos);
+                return Some(offset +(2*ALIGNMENT)+ byte_pos);
             }
-            if let Some(vmask3)=mask3 {
+            if let Some(vmask3)=NonZeroI32::new(MOVEMASK(cmp3)) {
                 let byte_pos = vmask3.trailing_zeros() as usize;
-                return Some(offset + 48 + byte_pos);
+                return Some(offset + (3*ALIGNMENT) + byte_pos);
             }
             
-            offset += SSE2_CHUNK_SIZE;
+            offset += CHUNK_SIZE;
         }
     }
 
@@ -370,18 +374,23 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
 
 
 /// Returns the last index matching the byte `x` in `text`.
-// SSE2 is baseline on x86_64, so we can use it for optimised memchr
+// SSE2 is baseline on x86_64, so we can use it for optimised memrchr
 #[must_use]
 #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
-    use core::arch::x86_64::{__m128i, _mm_cmpeq_epi8, _mm_load_si128, _mm_movemask_epi8, _mm_set1_epi8};
-    use core::num::NonZeroI32; // for smarter intrinsics
-    const SSE2_CHUNK_SIZE: usize = 64;  // Process 4x 16-byte chunks at a time
+    use core::arch::x86_64::__m128i as Element;
+    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
+    use core::arch::x86_64::_mm_cmpeq_epi8 as COMPARE;
+    use core::arch::x86_64::_mm_load_si128 as LOAD_ALIGNED;
+    use core::arch::x86_64:: _mm_movemask_epi8 as MOVEMASK;
+   use core::num::NonZeroI32; // for smarter intrinsics
+    const ALIGNMENT:usize=align_of::<Element>();
+    const CHUNK_SIZE: usize = 4*ALIGNMENT;  // Process 4x aligned chunks at a time
     
-    // Scan for a single byte value from the end using SSE2.
+    // Scan for a single byte value from the end usingiIntrinsics.
     // Split `text` in three parts:
     // - unaligned tail, after the last aligned address
-    // - body, scanned by 4x 16-byte chunks at a time (backwards)
+    // - body, scanned by 4x 'Alignment' chunks at a time (backwards)
     // - unaligned prefix at the start
 
     let len = text.len();
@@ -390,10 +399,10 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Use align_to to get the prefix and suffix lengths
     let (min_aligned_offset, max_aligned_offset) = {
         // We call this just to obtain the length of the prefix and suffix.
-        // In the middle we always process four __m128i chunks at once.
-        // SAFETY: transmuting `[u8]` to `[(__m128i, __m128i, __m128i, __m128i)]` is safe 
+        // In the middle we always process four `Elements` at once.
+        // SAFETY: transmuting `[u8]` to a tuple of `Element` is safe 
         // except for size differences which are handled by `align_to`.
-        let (prefix, _, suffix) = unsafe { text.align_to::<(__m128i, __m128i, __m128i, __m128i)>() };
+        let (prefix, _, suffix) = unsafe { text.align_to::<(Element,Element,Element,Element)>() };
         (prefix.len(), len - suffix.len())
     };
     
@@ -412,54 +421,52 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     
     // Now search the aligned body going backwards
     unsafe {
-        let needle = _mm_set1_epi8(x.cast_signed());
+        let needle = BROADCAST(x.cast_signed());
         
-        // Process 64-byte chunks (4x 16-byte registers) going backwards
+        
+        // Process 4*`ALIGMENT` suzed chunks  going backwards
         // offset is always aligned, so just testing `>` is sufficient and avoids possible overflow.
         while offset > min_aligned_offset {
             // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
-            // min_aligned_offset (prefix.len()) the remaining distance is at least SSE2_CHUNK_SIZE.
+            // min_aligned_offset (prefix.len()) the remaining distance is at least CHUNK_SIZE.
             // The body is trivially aligned due to align_to, avoid the cost of unaligned reads
-            let chunk_ptr = ptr.add(offset - SSE2_CHUNK_SIZE).cast::<__m128i>();
+            let chunk_ptr = ptr.add(offset - CHUNK_SIZE).cast::<Element>();
             
-            // Load 4x 16-byte aligned chunks (64 bytes total)
-            let chunk0 = _mm_load_si128(chunk_ptr);
-            let chunk1 = _mm_load_si128(chunk_ptr.add(1));
-            let chunk2 = _mm_load_si128(chunk_ptr.add(2));
-            let chunk3 = _mm_load_si128(chunk_ptr.add(3));
+            // Load 4x  `ALIGNMENTS` (equal to chunk size)
+            let chunk0 = LOAD_ALIGNED(chunk_ptr);
+            let chunk1 = LOAD_ALIGNED(chunk_ptr.add(1));
+            let chunk2 = LOAD_ALIGNED(chunk_ptr.add(2));
+            let chunk3 = LOAD_ALIGNED(chunk_ptr.add(3));
             
             // Compare each chunk with needle
-            let cmp0 = _mm_cmpeq_epi8(chunk0, needle);
-            let cmp1 = _mm_cmpeq_epi8(chunk1, needle);
-            let cmp2 = _mm_cmpeq_epi8(chunk2, needle);
-            let cmp3 = _mm_cmpeq_epi8(chunk3, needle);
+            let cmp0 = COMPARE(chunk0, needle);
+            let cmp1 = COMPARE(chunk1, needle);
+            let cmp2 = COMPARE(chunk2, needle);
+            let cmp3 = COMPARE(chunk3, needle);
             
-            // Get bitmasks for each comparison
-            let mask0 = NonZeroI32::new(_mm_movemask_epi8(cmp0));
-            let mask1 = NonZeroI32::new(_mm_movemask_epi8(cmp1));
-            let mask2 = NonZeroI32::new(_mm_movemask_epi8(cmp2));
-            let mask3 = NonZeroI32::new(_mm_movemask_epi8(cmp3));
+            
+     
             
             // Check each mask in reverse order (last match wins)
             // Check upper first for reverse search
-            if let Some(vmask3) = mask3 {
+            if let Some(vmask3) = NonZeroI32::new(MOVEMASK(cmp3)){
                 let byte_pos = 31 - vmask3.leading_zeros() as usize;
-                return Some(offset - SSE2_CHUNK_SIZE + 48 + byte_pos);
+                return Some(offset - CHUNK_SIZE + (3*ALIGNMENT) + byte_pos);
             }
-            if let Some(vmask2) = mask2 {
+            if let Some(vmask2) = NonZeroI32::new(MOVEMASK(cmp2)) {
                 let byte_pos = 31 - vmask2.leading_zeros() as usize;
-                return Some(offset - SSE2_CHUNK_SIZE + 32 + byte_pos);
+                return Some(offset - CHUNK_SIZE + (2*ALIGNMENT) + byte_pos);
             }
-            if let Some(vmask1) = mask1 {
+            if let Some(vmask1) = NonZeroI32::new(MOVEMASK(cmp1)) {
                 let byte_pos = 31 - vmask1.leading_zeros() as usize;
-                return Some(offset - SSE2_CHUNK_SIZE + 16 + byte_pos);
+                return Some(offset - CHUNK_SIZE + ALIGNMENT + byte_pos);
             }
-            if let Some(vmask0) = mask0 {
+            if let Some(vmask0) = NonZeroI32::new(MOVEMASK(cmp0)){
                 let byte_pos = 31 - vmask0.leading_zeros() as usize;
-                return Some(offset - SSE2_CHUNK_SIZE + byte_pos);
+                return Some(offset - CHUNK_SIZE + byte_pos);
             }
             
-            offset -= SSE2_CHUNK_SIZE;
+            offset -= CHUNK_SIZE;
         }
     }
     
