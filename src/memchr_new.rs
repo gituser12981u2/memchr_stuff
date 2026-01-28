@@ -20,7 +20,7 @@ use core::num::NonZeroUsize;
 
 const LO_USIZE: usize = repeat_u8(0x01);
 const HI_USIZE: usize = repeat_u8(0x80);
-const USIZE_BYTES: usize = size_of::<usize>();
+pub(crate) const USIZE_BYTES: usize = size_of::<usize>();
 
 // Simple code simplification tools (replace with in the functions if wanted)
 #[inline]
@@ -56,7 +56,7 @@ pub(crate) const fn contains_zero_byte(input: usize) -> Option<NonZeroUsize> {
     NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
 }
 
-#[inline]
+#[inline] // match std semantics
 #[must_use]
 pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
     // Fast path for small slices.
@@ -69,7 +69,7 @@ pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
 }
 
 #[inline]
-const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
+pub(crate) const fn memchr_naive(x: u8, text: &[u8]) -> Option<usize> {
     let mut i = 0;
 
     // FIXME(const-hack): Replace with `text.iter().pos(|c| *c == x)`.
@@ -188,6 +188,12 @@ Example of borrow propagation (LE byte order):
 - Input: `[0x00, 0x01]`
 - Subtracting 0x0101.. borrows from the 0x01 byte when processing 0x00
 - Classic SWAR reports both bytes as candidates despite only 0x00 being truly zero
+- 64 Bit example
+- If a byte in a word is  0x01 (eg 0000_00001 ->(apply <<7) 1000_0000 ->(apply a NOT/!) 01111_1111 ==!0x80
+- If a byte in a word is 0x00 (eg 0000_00000 -> (apply <<7 [UNCHANGED]) 0000_0000 ->(apply a NOT/!)  1111_1111 == 0xFF
+- Any x00 byte in a word becomes(via the HASZERO approach), 0x80 (1000_0000), -> 0x80 & 0xFF == 0x80 (retains its high bit)
+- Any x01 byte(falsely propagated) will become 0x80 but 0x80 & !0x80 ==0
+- Any non 0x00/0x01 byte in the word will become 0 anyway, and 0000_0000 & X (anything)==0x00
 
 The correction `classic &= !input << 7` clears spurious bits:
 - `!input << 7` shifts each byte's LSB into the high bit (0x80 position)
@@ -221,9 +227,15 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
     if classic == 0 {
         return None;
     }
+    /*
+    Because of inlining, this doesn't create 2 branches, it just creates 1, the same as original memchr/memrchr.
+    Check proof in ../assembly_outputs/memrchr_new.asm.txt
+
+     */
 
     /* Stage 2: Eliminate borrow-induced false positives */
     classic &= !input << 7;
+    /* Compiler reuses !input from previous calculation aka (not RDI) */
 
     /*
     SAFETY: `classic != 0` from stage 1 guarantees at least one true zero byte exists.

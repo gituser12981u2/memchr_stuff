@@ -57,9 +57,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        memchr_new::{
-            contains_zero_byte_borrow_fix, find_first_nul, find_last_nul,
-        },
+        memchr_new::{contains_zero_byte_borrow_fix, find_first_nul, find_last_nul},
         num::repeat_u8,
     };
     use core::num::NonZeroUsize;
@@ -146,6 +144,28 @@ mod tests {
         );
     }
 
+    fn test_amortised_memchr(search: u8, sl: &[u8]) {
+        let memchrtest = crate::finder::Finder::new(search).find_first(sl);
+        let realans = sl.iter().position(|b| *b == search);
+        assert!(
+            memchrtest == realans,
+            "test failed in memchr: expected {realans:?}, got {memchrtest:?} for byte {search:#04x}\n
+            searching for {} with ASCII value {search} in slice {}",
+            char::from_u32(search as _).unwrap(),String::from_utf8_lossy(sl)
+        );
+    }
+
+    fn test_amortised_memrchr(search: u8, sl: &[u8]) {
+        let memchrtest = crate::finder::Finder::new(search).find_last(sl);
+        let realans = sl.iter().rposition(|b| *b == search);
+        assert!(
+            memchrtest == realans,
+            "test failed in memchr: expected {realans:?}, got {memchrtest:?} for byte {search:#04x}\n
+            searching for {} with ASCII value {search} in slice {}",
+            char::from_u32(search as _).unwrap(),String::from_utf8_lossy(sl)
+        );
+    }
+
     fn test_memrchr(search: u8, sl: &[u8]) {
         let realans = sl.iter().rposition(|b| *b == search);
         let memrchrtest = crate::memchr_new::memrchr(search, sl);
@@ -177,6 +197,30 @@ mod tests {
         for byte in random_chars {
             for string in &byte_strings {
                 test_memrchr(byte, string);
+            }
+        }
+    }
+
+    #[test]
+    fn tmemrchr_amortised() {
+        let byte_strings = generate_random_byte_strings(TEST_SIZE, DETERMINISTIC);
+        let random_chars = 0..=u8::MAX;
+
+        for byte in random_chars {
+            for string in &byte_strings {
+                test_amortised_memrchr(byte, string);
+            }
+        }
+    }
+
+    #[test]
+    fn tmemchr_amortised() {
+        let byte_strings = generate_random_byte_strings(TEST_SIZE, DETERMINISTIC);
+        let random_chars = 0..=u8::MAX;
+
+        for byte in random_chars {
+            for string in &byte_strings {
+                test_amortised_memchr(byte, string);
             }
         }
     }
