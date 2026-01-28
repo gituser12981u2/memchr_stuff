@@ -1,7 +1,9 @@
-// TODO? test benchmarks on 32bit targets, 64bit BE works but is extremely slow on VM (thus benchmarks by emulation are not ideal.)
+// TODO? test benchmarks on 32bit targets, 64bit BE works but is extremely annoying to test on VM (thus benchmarks by emulation are not ideal.)
 // Original implementation taken from https://doc.rust-lang.org/src/core/slice/memchr.rs.html
 
 //Check comprehensive tests in ./test.rs please
+
+// Please see commentary on assembly analysis at bottom
 
 /// TODO: change to work with rust std.
 use crate::num::repeat_u8; //usize::repeat... is a private function in std lib internals, mock it up with this.
@@ -119,7 +121,6 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let lower = *(ptr.add(offset) as *const usize);
             let upper = *(ptr.add(offset + USIZE_BYTES) as *const usize);
 
-        
             // check this branch first (lower has precedence, obvs, we want the FIRST match)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
@@ -164,104 +165,69 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 }
 
 /*
-MY STUPID COMMENTARY
+Detects zero bytes in a word using a borrow-safe SWAR algorithm.
 
-FROM HACKERS DELIGHT
+This function uses a hybrid two-stage approach to detect zero bytes whilst avoiding
+cross-byte false positives caused by borrow propagation in the classic SWAR algorithm.
 
-https://github.com/lancetw/ebook-1/blob/master/02_algorithm/Hacker%27s%20Delight%202nd%20Edition.pdf
+Algorithm:
 
-WE DONT USE zbyter because it requires A LOT more instructions to check for 0 byte,
+Stage 1: Fast rejection using classic SWAR
 
-"
+The classic HASZERO test (`(input - 0x0101...) & ~input & 0x8080...`) provides a
+fast early-out for the common case where no zero bytes exist. However, this test
+can produce false positives when the subtraction borrows across byte boundaries.
 
-executes in only five instructions exclusive of loading the constants if the machine
-has the
-and not and
-number of trailing zeros instructions. It cannot be used to
-compute zbytel(
-x), because of a problem with borrows. It would be most useful for  <<-------------BORROW PROBLEM ffs
-finding the first 0-byte in a character string on a little-endian machine, or to simply test
-for a 0-byte (using only the assignment to y) on a machine of either endianness.
-"
-int zbytel(unsigned x) {
-unsigned y;
-int n;
-// Original byte: 00 80 other
-y = (x & 0x7F7F7F7F)+ 0x7F7F7F7F; // 7F 7F 1xxxxxxx
-y = ~(y | x | 0x7F7F7F7F); // 80 00 00000000
-n = nlz(y) >> 3; // n = 0 ... 4, 4 if x
-return n; // has no 0-byte.
-}
-FIGURE 6–2. Find leftmost 0-byte, branch-free code.
-The position of the rightmost 0-byte is given by the number of trailing 0’s in the final value of y
-computed above, divided by 8 (with fraction discarded). Using the expression for computing the
-number of trailing 0’s by means of the number of leading zeros instruction (see Section 5–4,
-“Counting Trailing 0’s ,” on page 107), this can be computed by replacing the assignment to n in the
-procedure above with:
-Click here to view code image
-n = (32 - nlz(~y & (y - 1))) >> 3;
+Stage 2: Borrow correction
 
-**ALSO NOTE, NO POINT REIMPLEMENTING TRAILING/LEADING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
-lacks the instruction and has to software emulate it. I trust LLVM maintainers to be a lot better than me at this!**
+When stage 1 detects potential zero bytes, we apply a correction mask to eliminate
+false positives. The key insight: if a byte's LSB is 1 (e.g., 0x01), it cannot be
+zero but may appear as a false positive due to borrow from an adjacent zero byte.
+
+Example of borrow propagation (LE byte order):
+- Input: `[0x00, 0x01]`
+- Subtracting 0x0101.. borrows from the 0x01 byte when processing 0x00
+- Classic SWAR reports both bytes as candidates despite only 0x00 being truly zero
+
+The correction `classic &= !input << 7` clears spurious bits:
+- `!input << 7` shifts each byte's LSB into the high bit (0x80 position)
+- ANDing with the classic mask eliminates candidates with LSB=1
+- *Since `!input` was already computed, this reuses it efficiently*
+
+Performance:
+
+- Adds only 2 instructions vs. classic SWAR (branch + shift)
+- Early exit on no-match case maintains fast-path performance
+- Avoids the 3-MOV overhead of alternative borrow-free algorithms (e.g., Wojciech Muła's)
+- Branch cost is acceptable since callers (memchr/memrchr) already branch on the result
+
+Comparison with alternatives:
+
+Alternative borrow-free approach (http://0x80.pl/notesen/2016-11-28-simd-strfind.html):
+```c
+const uint64_t t0 = (~x & 0x7f7f7f7f7f7f7f7fllu) + 0x0101010101010101llu;
+const uint64_t t1 = (~x & 0x8080808080808080llu);
+uint64_t zeros = t0 & t1;
+```
+This has similar instruction count but lacks early-out optimisation, which is critical
+for memchr/memrchr performance.
 
 */
-
 #[inline]
 #[must_use]
 pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZeroUsize> {
-    /*
-    Hybrid approach:
-    1) Use the classic SWAR test as a cheap early-out for the common case
-       where there are no zero bytes.
-    2) If the classic test indicates a possible match, compute a borrow/carry-
-       safe mask that cannot produce cross-byte false positives. This matters
-       for reverse search where we pick the *last* match.
-
-    Classic SWAR: may contain false positives due to cross-byte borrow.
-    However considering that we want to check *as quickly* as possible, this is ideal.
-    */
+    /* Stage 1: Classic SWAR test for fast rejection */
     let mut classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
     if classic == 0 {
         return None;
     }
+
+    /* Stage 2: Eliminate borrow-induced false positives */
+    classic &= !input << 7;
+
     /*
-    This function occurs a branch here meanwhile contains_zero_byte doesn't, it delegates the branch
-    to the memchr(on LE) (or opposite on BE) function, this is okay because a *branch still occurs*
-
-    Borrow-safe (carry-safe) SWAR:
-
-    The classic HASZERO mask is perfect for a boolean “any zero byte?” check, but the *per-byte* mask
-    can contain extra 0x80 bits when the subtraction `input - 0x01..` borrows across byte lanes.
-    That’s a problem here because we don’t just test “non-zero?” — we feed the mask into
-    `leading_zeros`/`trailing_zeros` to pick an actual byte index.
-
-    Example (two adjacent bytes, lowest first):
-    - `input = [0x00, 0x01]`
-    - subtracting `0x01..` borrows from the `0x00` byte into the next byte, so the classic mask may
-      report both bytes as candidates even though only the first byte is truly zero.
-
-    `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
-    0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.*/
-    classic &= !(input << 7);
-    // I didn't find this approach anywhere online, took a lot of work!
-    // This approach adds an extra 3 instructions (or 2 if architecture has andn)
-    // Meanwhile the typical approach in http://0x80.pl/notesen/2016-11-28-simd-strfind.html#swar
-    /*
-
-    // 7th bit set if lower 7 bits are zero
-    const uint64_t t0 = (~x & 0x7f7f7f7f7f7f7f7fllu) + 0x0101010101010101llu;
-    // 7th bit set if 7th bit is zero
-    const uint64_t t1 = (~x & 0x8080808080808080llu);
-    uint64_t zeros = t0 & t1;
-    */
-    // involves 3 mov's as opposed to only needing 2 MOV's here. It does 1 less ALU instruction than my approach but doesnt use an early 'OUT'
-    // which is critical for memchr/memrchr
-    /*
-    SAFETY: `classic != 0` implies there is at least one real zero byte
-    somewhere in the word (false positives only occur alongside a real zero
-    due to borrow propagation), so  now `classic` must be non-zero.
-    Use this to get smarter intrinsic (aka ctlz/cttz non_zero)
-    Note: Debug assertions check classic!=0 so check tests for comprehensive validation
+    SAFETY: `classic != 0` from stage 1 guarantees at least one true zero byte exists.
+    The stage 2 correction only clears false positives, never true matches.
     */
     Some(unsafe { NonZeroUsize::new_unchecked(classic) })
 }
@@ -269,6 +235,7 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
 /// Returns the last index matching the byte `x` in `text`.
 ///
 #[must_use]
+#[allow(clippy::missing_inline_in_public_items)] // Match semantics of std
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     // Scan for a single byte value by reading two `usize` words at a time.
 
@@ -347,6 +314,7 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
         if let Some(num) = maybe_match_upper {
             // replace this function with actual definition if wanted
+
             let zero_byte_pos = find_last_nul(num);
 
             return Some(offset - USIZE_BYTES + zero_byte_pos);
@@ -378,3 +346,112 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             .rposition(|elt| *elt == x)
     }
 }
+
+/*
+MY STUPID COMMENTARY
+
+FROM HACKERS DELIGHT
+
+https://github.com/lancetw/ebook-1/blob/master/02_algorithm/Hacker%27s%20Delight%202nd%20Edition.pdf
+
+WE DONT USE zbyter because it requires A LOT more instructions to check for 0 byte,
+
+"
+
+executes in only five instructions exclusive of loading the constants if the machine
+has the
+and not and
+number of trailing zeros instructions. It cannot be used to
+compute zbytel(
+x), because of a problem with borrows. It would be most useful for  <<-------------BORROW PROBLEM ffs
+finding the first 0-byte in a character string on a little-endian machine, or to simply test
+for a 0-byte (using only the assignment to y) on a machine of either endianness.
+"
+int zbytel(unsigned x) {
+unsigned y;
+int n;
+// Original byte: 00 80 other
+y = (x & 0x7F7F7F7F)+ 0x7F7F7F7F; // 7F 7F 1xxxxxxx
+y = ~(y | x | 0x7F7F7F7F); // 80 00 00000000
+n = nlz(y) >> 3; // n = 0 ... 4, 4 if x
+return n; // has no 0-byte.
+}
+FIGURE 6–2. Find leftmost 0-byte, branch-free code.
+The position of the rightmost 0-byte is given by the number of trailing 0’s in the final value of y
+computed above, divided by 8 (with fraction discarded). Using the expression for computing the
+number of trailing 0’s by means of the number of leading zeros instruction (see Section 5–4,
+“Counting Trailing 0’s ,” on page 107), this can be computed by replacing the assignment to n in the
+procedure above with:
+Click here to view code image
+n = (32 - nlz(~y & (y - 1))) >> 3;
+
+**ALSO NOTE, NO POINT REIMPLEMENTING TRAILING/LEADING ZEROS FOR WEIRD ARCHITECTURES, since LLVM will have a good builtin if the arch
+lacks the instruction and has to software emulate it. I trust LLVM maintainers to be a lot better than me at this!**
+
+*/
+
+/*
+
+
+// Basically my optimisation has the same instruction counts as the original borrow free version
+// However it allows the early out. Nice win!
+ */
+
+/*
+#[inline(never)]
+// Wojciech's translation into Rust
+pub const fn contains_zero_woj(x: usize) -> Option<NonZeroUsize> {
+    let t0 = (!x & !HI_USIZE) + LO_USIZE;
+    let t1 = !x & HI_USIZE;
+    NonZeroUsize::new(t0 & t1)
+}
+*/
+
+/*
+
+2 extra instructions for Original borrow free version
+ memchr_stuff[f91d351e7b3844a]::memchr_new::contains_zero_woj:
+ not     rdi
+ movabs  rax, 9187201950435737471
+ and     rax, rdi
+ movabs  rcx, 72340172838076673
+ add     rcx, rax
+ movabs  rax, -9187201950435737472
+ and     rax, rdi
+ and     rax, rcx
+ ret
+
+
+
+ memchr_stuff[f91d351e7b3844a]::memchr_new::contains_zero_byte:
+ movabs  rcx, -72340172838076673
+ add     rcx, rdi
+ not     rdi
+ movabs  rax, -9187201950435737472
+ and     rax, rdi
+ and     rax, rcx
+ ret
+
+*/
+
+/*
+#[inline(never)]
+pub const fn contains_zero_byte_new(x: usize) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(x.wrapping_sub(LO_USIZE) & !x & HI_USIZE & (!x << 7))
+}
+
+*/
+/*
+
+memchr_stuff[f91d351e7b3844a]::memchr_new::contains_zero_byte_new:
+    movabs  rcx, -72340172838076673
+add     rcx, rdi
+not     rdi
+and     rcx, rdi
+shl     rdi, 7
+movabs  rax, -9187201950435737472
+and     rax, rdi
+and     rax, rcx
+ret
+
+   */
