@@ -3,6 +3,8 @@
 	.p2align	4
 .type	memchr_stuff::memchr_old::memchr,@function
 memchr_stuff::memchr_old::memchr:
+		// src/memchr_old.rs:28
+		pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
 	.cfi_startproc
 	push r14
 	.cfi_def_cfa_offset 16
@@ -11,90 +13,138 @@ memchr_stuff::memchr_old::memchr:
 	.cfi_offset rbx, -24
 	.cfi_offset r14, -16
 	mov rcx, rdx
+		// src/memchr_old.rs:30
+		if text.len() < 2 * USIZE_BYTES {
 	cmp rdx, 15
-	ja .LBB1_6
+	ja .LBB3_6
 	xor eax, eax
 	xor edx, edx
+		// src/memchr_old.rs:43
+		while i < text.len() {
 	test rcx, rcx
-	je .LBB1_5
+	je .LBB3_5
 	.p2align	4
-.LBB1_2:
+.LBB3_2:
+		// src/memchr_old.rs:44
+		if text[i] == x {
 	cmp byte ptr [rsi + rdx], dil
-	je .LBB1_19
+	je .LBB3_19
+		// src/memchr_old.rs:48
+		i += 1;
 	inc rdx
+		// src/memchr_old.rs:43
+		while i < text.len() {
 	cmp rcx, rdx
-	jne .LBB1_2
+	jne .LBB3_2
 	mov rdx, rcx
-.LBB1_5:
+.LBB3_5:
+		// src/memchr_old.rs:36
+		}
 	pop rbx
 	.cfi_def_cfa_offset 16
 	pop r14
 	.cfi_def_cfa_offset 8
 	ret
-.LBB1_6:
+.LBB3_6:
 	.cfi_def_cfa_offset 24
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2285
+		let aligned_address = wrapping_add(addr, a_minus_one) & wrapping_sub(0, a);
 	lea rdx, [rsi + 7]
 	and rdx, -8
+		// src/memchr_old.rs:72
+		if offset > 0 {
 	sub rdx, rsi
-	jne .LBB1_11
+	jne .LBB3_11
 	lea rax, [rcx - 16]
 	xor edx, edx
-.LBB1_8:
+.LBB3_8:
 	movabs r8, -9187201950435737472
 	movabs r9, 72340172838076672
+		// src/num.rs:8
+		usize::from_ne_bytes([x; size_of::<usize>()])
 	movzx r11d, dil
 	lea r10, [r9 + 1]
 	imul r10, r11
 	.p2align	4
-.LBB1_9:
+.LBB3_9:
 	mov r11, qword ptr [rsi + rdx]
+		// src/memchr_old.rs:90
+		let zu = contains_zero_byte(u ^ repeated_x);
 	xor r11, r10
+		// src/memchr_old.rs:22
+		x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
 	mov rbx, r9
 	sub rbx, r11
 	or rbx, r11
 	mov r11, qword ptr [rsi + rdx + 8]
+		// src/memchr_old.rs:91
+		let zv = contains_zero_byte(v ^ repeated_x);
 	xor r11, r10
+		// src/memchr_old.rs:22
+		x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
 	mov r14, r9
 	sub r14, r11
 	or r14, r11
+		// src/memchr_old.rs:92
+		if zu || zv {
 	and rbx, r8
 	and rbx, r14
 	cmp rbx, r8
-	jne .LBB1_15
+	jne .LBB3_15
+		// src/memchr_old.rs:96
+		offset += USIZE_BYTES * 2;
 	add rdx, 16
+		// src/memchr_old.rs:82
+		while offset <= len - 2 * USIZE_BYTES {
 	cmp rdx, rax
-	jbe .LBB1_9
-	jmp .LBB1_15
-.LBB1_11:
+	jbe .LBB3_9
+	jmp .LBB3_15
+.LBB3_11:
 	xor r8d, r8d
 	.p2align	4
-.LBB1_12:
+.LBB3_12:
+		// src/memchr_old.rs:44
+		if text[i] == x {
 	cmp byte ptr [rsi + r8], dil
-	je .LBB1_20
+	je .LBB3_20
+		// src/memchr_old.rs:48
+		i += 1;
 	inc r8
+		// src/memchr_old.rs:43
+		while i < text.len() {
 	cmp rdx, r8
-	jne .LBB1_12
+	jne .LBB3_12
 	lea rax, [rcx - 16]
+		// src/memchr_old.rs:82
+		while offset <= len - 2 * USIZE_BYTES {
 	cmp rdx, rax
-	jbe .LBB1_8
-.LBB1_15:
+	jbe .LBB3_8
+.LBB3_15:
 	xor eax, eax
+		// src/memchr_old.rs:43
+		while i < text.len() {
 	cmp rcx, rdx
-	je .LBB1_18
+	je .LBB3_18
 	.p2align	4
-.LBB1_16:
+.LBB3_16:
+		// src/memchr_old.rs:44
+		if text[i] == x {
 	cmp byte ptr [rsi + rdx], dil
-	je .LBB1_19
+	je .LBB3_19
+		// src/memchr_old.rs:43
+		while i < text.len() {
 	inc rdx
 	cmp rcx, rdx
-	jne .LBB1_16
-.LBB1_18:
+	jne .LBB3_16
+.LBB3_18:
+		// src/memchr_old.rs:36
+		}
 	pop rbx
 	.cfi_def_cfa_offset 16
 	pop r14
 	.cfi_def_cfa_offset 8
 	ret
-.LBB1_19:
+.LBB3_19:
 	.cfi_def_cfa_offset 24
 	mov eax, 1
 	pop rbx
@@ -102,7 +152,7 @@ memchr_stuff::memchr_old::memchr:
 	pop r14
 	.cfi_def_cfa_offset 8
 	ret
-.LBB1_20:
+.LBB3_20:
 	.cfi_def_cfa_offset 24
 	mov eax, 1
 	mov rdx, r8

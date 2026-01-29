@@ -1,97 +1,187 @@
-memchr_stuff[f91d351e7b3844a]::memchr_new::memchr:
- push    rbx
- mov     rcx, rdx
- cmp     rdx, 15
- ja      .LBB1_5
- xor     eax, eax
- xor     edx, edx
- test    rcx, rcx
- je      .LBB1_24
+.section .text.memchr_stuff::memchr_new::memchr,"ax",@progbits
+	.globl	memchr_stuff::memchr_new::memchr
+	.p2align	4
+.type	memchr_stuff::memchr_new::memchr,@function
+memchr_stuff::memchr_new::memchr:
+		// src/memchr_new.rs:61
+		pub const fn memchr(x: u8, text: &[u8]) -> Option<usize> {
+	.cfi_startproc
+	push rbx
+	.cfi_def_cfa_offset 16
+	.cfi_offset rbx, -16
+	mov rcx, rdx
+		// src/memchr_new.rs:63
+		if text.len() < 2 * USIZE_BYTES {
+	cmp rdx, 15
+	ja .LBB1_5
+	xor eax, eax
+	xor edx, edx
+		// src/memchr_new.rs:77
+		while i < text.len() {
+	test rcx, rcx
+	je .LBB1_24
+	.p2align	4
 .LBB1_2:
- cmp     byte, ptr, [rsi, +, rdx], dil
- je      .LBB1_23
- inc     rdx
- cmp     rcx, rdx
- jne     .LBB1_2
- mov     rdx, rcx
- pop     rbx
- ret
+		// src/memchr_new.rs:78
+		if text[i] == x {
+	cmp byte ptr [rsi + rdx], dil
+	je .LBB1_23
+		// src/memchr_new.rs:82
+		i += 1;
+	inc rdx
+		// src/memchr_new.rs:77
+		while i < text.len() {
+	cmp rcx, rdx
+	jne .LBB1_2
+	mov rdx, rcx
+		// src/memchr_new.rs:69
+		}
+	pop rbx
+	.cfi_def_cfa_offset 8
+	ret
 .LBB1_5:
- lea     rdx, [rsi, +, 7]
- and     rdx, -8
- sub     rdx, rsi
- jne     .LBB1_6
- lea     rax, [rcx, -, 16]
- xor     edx, edx
+	.cfi_def_cfa_offset 16
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2285
+		let aligned_address = wrapping_add(addr, a_minus_one) & wrapping_sub(0, a);
+	lea rdx, [rsi + 7]
+	and rdx, -8
+		// src/memchr_new.rs:104
+		if offset > 0 {
+	sub rdx, rsi
+	jne .LBB1_6
+	lea rax, [rcx - 16]
+	xor edx, edx
 .LBB1_12:
- movabs  r8, -72340172838076673
- movabs  r9, -9187201950435737472
- movzx   r11d, dil
- movabs  r10, 72340172838076673
- imul    r10, r11
+	movabs r8, -72340172838076673
+	movabs r9, -9187201950435737472
+		// src/num.rs:8
+		usize::from_ne_bytes([x; size_of::<usize>()])
+	movzx r11d, dil
+	movabs r10, 72340172838076673
+	imul r10, r11
+	.p2align	4
 .LBB1_13:
- mov     rbx, qword, ptr, [rsi, +, rdx]
- xor     rbx, r10
- mov     r11, rbx
- not     r11
- add     rbx, r8
- and     r11, r9
- and     r11, rbx
- jne     .LBB1_14
- mov     rbx, qword, ptr, [rsi, +, rdx, +, 8]
- xor     rbx, r10
- mov     r11, rbx
- not     r11
- add     rbx, r8
- and     r11, r9
- and     r11, rbx
- jne     .LBB1_22
- add     rdx, 16
- cmp     rdx, rax
- jbe     .LBB1_13
- jmp     .LBB1_16
+	mov rbx, qword ptr [rsi + rdx]
+		// src/memchr_new.rs:131
+		let maybe_match_lower = contains_zero_byte(lower ^ repeated_x);
+	xor rbx, r10
+	mov r11, rbx
+	not r11
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:2435
+		intrinsics::wrapping_sub(self, rhs)
+	add rbx, r8
+		// src/memchr_new.rs:56
+		NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
+	and r11, r9
+		// src/memchr_new.rs:136
+		if let Some(lower_valid) = maybe_match_lower {
+	and r11, rbx
+	jne .LBB1_14
+	mov rbx, qword ptr [rsi + rdx + 8]
+		// src/memchr_new.rs:144
+		let maybe_match_upper = contains_zero_byte(upper ^ repeated_x);
+	xor rbx, r10
+	mov r11, rbx
+	not r11
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:2435
+		intrinsics::wrapping_sub(self, rhs)
+	add rbx, r8
+		// src/memchr_new.rs:56
+		NonZeroUsize::new(input.wrapping_sub(LO_USIZE) & !input & HI_USIZE)
+	and r11, r9
+		// src/memchr_new.rs:148
+		if let Some(upper_valid) = maybe_match_upper {
+	and r11, rbx
+	jne .LBB1_22
+		// src/memchr_new.rs:155
+		offset += USIZE_BYTES * 2;
+	add rdx, 16
+		// src/memchr_new.rs:116
+		while offset <= len - 2 * USIZE_BYTES {
+	cmp rdx, rax
+	jbe .LBB1_13
+	jmp .LBB1_16
 .LBB1_6:
- xor     r8d, r8d
+	xor r8d, r8d
+	.p2align	4
 .LBB1_7:
- cmp     byte, ptr, [rsi, +, r8], dil
- je      .LBB1_8
- inc     r8
- cmp     rdx, r8
- jne     .LBB1_7
- lea     rax, [rcx, -, 16]
- cmp     rdx, rax
- jbe     .LBB1_12
+		// src/memchr_new.rs:78
+		if text[i] == x {
+	cmp byte ptr [rsi + r8], dil
+	je .LBB1_8
+		// src/memchr_new.rs:82
+		i += 1;
+	inc r8
+		// src/memchr_new.rs:77
+		while i < text.len() {
+	cmp rdx, r8
+	jne .LBB1_7
+	lea rax, [rcx - 16]
+		// src/memchr_new.rs:116
+		while offset <= len - 2 * USIZE_BYTES {
+	cmp rdx, rax
+	jbe .LBB1_12
 .LBB1_16:
- xor     eax, eax
- cmp     rcx, rdx
- jne     .LBB1_18
- pop     rbx
- ret
+	xor eax, eax
+		// src/memchr_new.rs:77
+		while i < text.len() {
+	cmp rcx, rdx
+	jne .LBB1_18
+		// src/memchr_new.rs:69
+		}
+	pop rbx
+	.cfi_def_cfa_offset 8
+	ret
+	.p2align	4
 .LBB1_18:
- cmp     byte, ptr, [rsi, +, rdx], dil
- je      .LBB1_23
- inc     rdx
- cmp     rcx, rdx
- jne     .LBB1_18
- pop     rbx
- ret
+	.cfi_def_cfa_offset 16
+		// src/memchr_new.rs:78
+		if text[i] == x {
+	cmp byte ptr [rsi + rdx], dil
+	je .LBB1_23
+		// src/memchr_new.rs:77
+		while i < text.len() {
+	inc rdx
+	cmp rcx, rdx
+	jne .LBB1_18
+		// src/memchr_new.rs:69
+		}
+	pop rbx
+	.cfi_def_cfa_offset 8
+	ret
 .LBB1_8:
- mov     eax, 1
- mov     rdx, r8
- pop     rbx
- ret
+	.cfi_def_cfa_offset 16
+	mov eax, 1
+	mov rdx, r8
+	pop rbx
+	.cfi_def_cfa_offset 8
+	ret
 .LBB1_14:
- rep     bsf, rax, r11
- shr     eax, 3
- add     rdx, rax
- jmp     .LBB1_23
+	.cfi_def_cfa_offset 16
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs:641
+		intrinsics::cttz_nonzero(self.get() as $Uint)
+	rep bsf	rax, r11
+		// src/memchr_new.rs:30
+		(num.trailing_zeros() >> 3) as usize
+	shr eax, 3
+		// src/memchr_new.rs:140
+		return Some(offset + zero_byte_pos);
+	add rdx, rax
+	jmp .LBB1_23
 .LBB1_22:
- rep     bsf, rax, r11
- shr     eax, 3
- add     rdx, rax
- add     rdx, 8
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs:641
+		intrinsics::cttz_nonzero(self.get() as $Uint)
+	rep bsf	rax, r11
+		// src/memchr_new.rs:30
+		(num.trailing_zeros() >> 3) as usize
+	shr eax, 3
+	add rdx, rax
+	add rdx, 8
 .LBB1_23:
- mov     eax, 1
+	mov eax, 1
 .LBB1_24:
- pop     rbx
- ret
+		// src/memchr_new.rs:69
+		}
+	pop rbx
+	.cfi_def_cfa_offset 8
+	ret

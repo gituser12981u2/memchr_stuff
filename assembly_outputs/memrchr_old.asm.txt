@@ -3,6 +3,8 @@
 	.p2align	4
 .type	memchr_stuff::memchr_old::memrchr,@function
 memchr_stuff::memchr_old::memrchr:
+		// src/memchr_old.rs:116
+		pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 	.cfi_startproc
 	push r15
 	.cfi_def_cfa_offset 16
@@ -13,77 +15,133 @@ memchr_stuff::memchr_old::memrchr:
 	.cfi_offset rbx, -32
 	.cfi_offset r14, -24
 	.cfi_offset r15, -16
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2285
+		let aligned_address = wrapping_add(addr, a_minus_one) & wrapping_sub(0, a);
 	lea r8, [rsi + 7]
 	and r8, -8
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2286
+		let byte_offset = wrapping_sub(aligned_address, addr);
 	sub r8, rsi
 	mov rax, rdx
 	mov rcx, rdx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/mod.rs:4298
+		if offset > self.len() {
 	cmp rdx, r8
 	jb .LBB4_3
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/mod.rs:2053
+		unsafe { (from_raw_parts(ptr, mid), from_raw_parts(ptr.add(mid), unchecked_sub(len, mid))) }
 	mov ecx, edx
 	sub ecx, r8d
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/mod.rs:4252
+		let ts_len = self.len() % ts;
 	and ecx, 15
+		// src/memchr_old.rs:133
+		(prefix.len(), len - suffix.len())
 	mov rax, rdx
 	sub rax, rcx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/index.rs:568
+		if self.start > slice.len() {
 	jb .LBB4_6
 	mov rcx, r8
 .LBB4_3:
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:405
+		while let Some(x) = self.next_back() {
 	mov r9, rax
 	neg r9
 	mov r10, rdx
 	.p2align	4
 .LBB4_4:
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/non_null.rs:1692
+		self.as_ptr() == other.as_ptr()
 	mov r8, r9
 	add r8, r10
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:25
+		($this:ident, $len:ident => $zst_body:expr, $end:ident => $other_body:expr,) => {{
 	je .LBB4_7
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
 	lea r8, [r10 - 1]
+		// src/memchr_old.rs:137
+		if let Some(index) = text[offset..].iter().rposition(|elt| *elt == x) {
 	cmp byte ptr [rsi + r10 - 1], dil
 	mov r10, r8
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
 	jne .LBB4_4
 	jmp .LBB4_15
 .LBB4_7:
 	movabs r8, -9187201950435737472
 	movabs r10, 72340172838076672
+		// src/num.rs:8
+		usize::from_ne_bytes([x; size_of::<usize>()])
 	movzx r9d, dil
 	lea r11, [r10 + 1]
 	imul r11, r9
 	.p2align	4
 .LBB4_8:
 	mov r9, rax
+		// src/memchr_old.rs:147
+		while offset > min_aligned_offset {
 	cmp rax, rcx
 	jbe .LBB4_10
+		// src/memchr_old.rs:151
+		let u = *(ptr.add(offset - 2 * chunk_bytes) as *const Chunk);
 	lea rax, [r9 - 16]
 	mov rbx, qword ptr [rsi + r9 - 16]
+		// src/memchr_old.rs:155
+		let zu = contains_zero_byte(u ^ repeated_x);
 	xor rbx, r11
+		// src/memchr_old.rs:22
+		x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
 	mov r14, r10
 	sub r14, rbx
 	or r14, rbx
 	mov rbx, qword ptr [rsi + r9 - 8]
+		// src/memchr_old.rs:156
+		let zv = contains_zero_byte(v ^ repeated_x);
 	xor rbx, r11
+		// src/memchr_old.rs:22
+		x.wrapping_sub(LO_USIZE) & !x & HI_USIZE != 0
 	mov r15, r10
 	sub r15, rbx
 	or r15, rbx
+		// src/memchr_old.rs:157
+		if zu || zv {
 	and r14, r8
 	and r14, r15
 	cmp r14, r8
 	je .LBB4_8
 .LBB4_10:
 	cmp r9, rdx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:864
+		if self < rhs {
 	ja .LBB4_17
 	xor eax, eax
 	.p2align	4
 .LBB4_12:
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/non_null.rs:1692
+		self.as_ptr() == other.as_ptr()
 	test r9, r9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:25
+		($this:ident, $len:ident => $zst_body:expr, $end:ident => $other_body:expr,) => {{
 	je .LBB4_13
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:406
+		i -= 1;
 	lea r8, [r9 - 1]
+		// src/memchr_old.rs:165
+		text[..offset].iter().rposition(|elt| *elt == x)
 	cmp byte ptr [rsi + r9 - 1], dil
 	mov r9, r8
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
 	jne .LBB4_12
 .LBB4_15:
 	mov eax, 1
 	jmp .LBB4_16
 .LBB4_13:
 .LBB4_16:
+		// src/memchr_old.rs:166
+		}
 	mov rdx, r8
 	pop rbx
 	.cfi_def_cfa_offset 24
@@ -94,12 +152,16 @@ memchr_stuff::memchr_old::memrchr:
 	ret
 .LBB4_17:
 	.cfi_def_cfa_offset 32
-	lea rcx, [rip + .Lanon.1fe6499be026b1b15257fd89cba400f7.1]
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/index.rs:443
+		slice_index_fail(self.start, self.end, slice.len())
+	lea rcx, [rip + .Lanon.f08707be013cea1d8a523acf93104029.1]
 	xor edi, edi
 	mov rsi, r9
 	call qword ptr [rip + core::slice::index::slice_index_fail@GOTPCREL]
 .LBB4_6:
-	lea rcx, [rip + .Lanon.1fe6499be026b1b15257fd89cba400f7.2]
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/index.rs:569
+		slice_index_fail(self.start, slice.len(), slice.len())
+	lea rcx, [rip + .Lanon.f08707be013cea1d8a523acf93104029.2]
 	mov rdi, rax
 	mov rsi, rdx
 	call qword ptr [rip + core::slice::index::slice_index_fail@GOTPCREL]

@@ -1,95 +1,201 @@
-memchr_stuff[f91d351e7b3844a]::memchr_new::memrchr:
- mov     rax, rdx
- lea     r8, [rsi, +, 7]
- and     r8, -8
- sub     r8, rsi
- mov     rcx, rdx
- sub     rcx, r8
- and     ecx, 15
- xor     r9d, r9d
- cmp     rdx, r8
- cmovbe  r8, rdx
- cmovae  r9, rcx
- mov     rcx, rdx
- sub     rcx, r9
+.section .text.memchr_stuff::memchr_new::memrchr,"ax",@progbits
+	.globl	memchr_stuff::memchr_new::memrchr
+	.p2align	4
+.type	memchr_stuff::memchr_new::memrchr,@function
+memchr_stuff::memchr_new::memrchr:
+		// src/memchr_new.rs:251
+		pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
+	.cfi_startproc
+	mov rax, rdx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2285
+		let aligned_address = wrapping_add(addr, a_minus_one) & wrapping_sub(0, a);
+	lea r8, [rsi + 7]
+	and r8, -8
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:2286
+		let byte_offset = wrapping_sub(aligned_address, addr);
+	sub r8, rsi
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/mod.rs:4298
+		if offset > self.len() {
+	mov rcx, rdx
+	sub rcx, r8
+	and ecx, 15
+	xor r9d, r9d
+	cmp rdx, r8
+	cmovbe r8, rdx
+	cmovae r9, rcx
+		// src/memchr_new.rs:279
+		(prefix.len(), len - suffix.len())
+	mov rcx, rdx
+	sub rcx, r9
+	.p2align	4
 .LBB1_1:
- test    r9, r9
- je      .LBB1_5
- dec     r9
- lea     rdx, [rax, -, 1]
- cmp     byte, ptr, [rsi, +, rax, -, 1], dil
- mov     rax, rdx
- jne     .LBB1_1
- mov     eax, 1
- ret
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/non_null.rs:1692
+		self.as_ptr() == other.as_ptr()
+	test r9, r9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:25
+		($this:ident, $len:ident => $zst_body:expr, $end:ident => $other_body:expr,) => {{
+	je .LBB1_5
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:406
+		i -= 1;
+	dec r9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
+	lea rdx, [rax - 1]
+		// src/memchr_new.rs:293
+		.rposition(|elt| *elt == x)
+	cmp byte ptr [rsi + rax - 1], dil
+	mov rax, rdx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
+	jne .LBB1_1
+	mov eax, 1
+		// src/memchr_new.rs:366
+		}
+	ret
 .LBB1_5:
- push    r14
- push    rbx
- movabs  rax, -72340172838076673
- movabs  rdx, -9187201950435737472
- movzx   r10d, dil
- movabs  r9, 72340172838076673
- imul    r9, r10
- mov     r10, r9
- not     r10
+	push r14
+	.cfi_def_cfa_offset 16
+	push rbx
+	.cfi_def_cfa_offset 24
+	.cfi_offset rbx, -24
+	.cfi_offset r14, -16
+	movabs rax, -72340172838076673
+	movabs rdx, -9187201950435737472
+		// src/num.rs:8
+		usize::from_ne_bytes([x; size_of::<usize>()])
+	movzx r10d, dil
+	movabs r9, 72340172838076673
+	imul r9, r10
+		// src/memchr_new.rs:306
+		while offset > min_aligned_offset {
+	mov r10, r9
+	not r10
+	.p2align	4
 .LBB1_6:
- cmp     rcx, r8
- jbe     .LBB1_7
- mov     r11, qword, ptr, [rsi, +, rcx, -, 8]
- mov     r14, r11
- xor     r14, r9
- add     r14, rax
- xor     r11, r10
- mov     rbx, r11
- and     rbx, rdx
- and     rbx, r14
- jne     .LBB1_12
- mov     r11, qword, ptr, [rsi, +, rcx, -, 16]
- add     rcx, -16
- mov     r14, r11
- xor     r14, r9
- add     r14, rax
- xor     r11, r10
- mov     rbx, r11
- and     rbx, rdx
- and     rbx, r14
- je      .LBB1_6
- shl     r11, 7
- and     rbx, r11
- bsr     rdx, rbx
- xor     edx, 56
- shr     edx, 3
- xor     rdx, 7
- add     rdx, rcx
- mov     eax, 1
- pop     rbx
- pop     r14
- ret
+	cmp rcx, r8
+	jbe .LBB1_7
+		// src/memchr_new.rs:314
+		let upper = unsafe { *(ptr.add(offset - USIZE_BYTES) as *const usize) };
+	mov r11, qword ptr [rsi + rcx - 8]
+		// src/memchr_new.rs:331
+		let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
+	mov r14, r11
+	xor r14, r9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:2435
+		intrinsics::wrapping_sub(self, rhs)
+	add r14, rax
+	xor r11, r10
+		// src/memchr_new.rs:226
+		let mut classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
+	mov rbx, r11
+	and rbx, rdx
+		// src/memchr_new.rs:227
+		if classic == 0 {
+	and rbx, r14
+	jne .LBB1_12
+		// src/memchr_new.rs:310
+		let lower = unsafe { *(ptr.add(offset - 2 * USIZE_BYTES) as *const usize) };
+	mov r11, qword ptr [rsi + rcx - 16]
+	add rcx, -16
+		// src/memchr_new.rs:344
+		let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
+	mov r14, r11
+	xor r14, r9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/uint_macros.rs:2435
+		intrinsics::wrapping_sub(self, rhs)
+	add r14, rax
+	xor r11, r10
+		// src/memchr_new.rs:226
+		let mut classic = input.wrapping_sub(LO_USIZE) & !input & HI_USIZE;
+	mov rbx, r11
+	and rbx, rdx
+		// src/memchr_new.rs:227
+		if classic == 0 {
+	and rbx, r14
+	je .LBB1_6
+		// src/memchr_new.rs:237
+		classic &= !input << 7;
+	shl r11, 7
+	and rbx, r11
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs:611
+		intrinsics::ctlz_nonzero(self.get() as $Uint)
+	bsr rdx, rbx
+	xor edx, 56
+		// src/memchr_new.rs:48
+		USIZE_BYTES - 1 - ((num.leading_zeros()) >> 3) as usize
+	shr edx, 3
+	xor rdx, 7
+		// src/memchr_new.rs:350
+		return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
+	add rdx, rcx
+	mov eax, 1
+	pop rbx
+	.cfi_def_cfa_offset 16
+	pop r14
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
+	.cfi_restore r14
+		// src/memchr_new.rs:366
+		}
+	ret
 .LBB1_7:
- xor     eax, eax
+	.cfi_def_cfa_offset 24
+	.cfi_offset rbx, -24
+	.cfi_offset r14, -16
+	xor eax, eax
+	.p2align	4
 .LBB1_8:
- test    rcx, rcx
- je      .LBB1_9
- lea     rdx, [rcx, -, 1]
- cmp     byte, ptr, [rsi, +, rcx, -, 1], dil
- mov     rcx, rdx
- jne     .LBB1_8
- jmp     .LBB1_15
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/non_null.rs:1692
+		self.as_ptr() == other.as_ptr()
+	test rcx, rcx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:25
+		($this:ident, $len:ident => $zst_body:expr, $end:ident => $other_body:expr,) => {{
+	je .LBB1_9
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:406
+		i -= 1;
+	lea rdx, [rcx - 1]
+		// src/memchr_new.rs:364
+		.rposition(|elt| *elt == x)
+	cmp byte ptr [rsi + rcx - 1], dil
+	mov rcx, rdx
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/slice/iter/macros.rs:407
+		if predicate(x) {
+	jne .LBB1_8
+	jmp .LBB1_15
 .LBB1_12:
- shl     r11, 7
- and     rbx, r11
- bsr     rax, rbx
- xor     eax, 56
- shr     eax, 3
- xor     rax, 7
- lea     rdx, [rax, +, rcx]
- add     rdx, -8
+		// src/memchr_new.rs:237
+		classic &= !input << 7;
+	shl r11, 7
+	and rbx, r11
+		// ~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs:611
+		intrinsics::ctlz_nonzero(self.get() as $Uint)
+	bsr rax, rbx
+	xor eax, 56
+		// src/memchr_new.rs:48
+		USIZE_BYTES - 1 - ((num.leading_zeros()) >> 3) as usize
+	shr eax, 3
+	xor rax, 7
+	lea rdx, [rax + rcx]
+	add rdx, -8
 .LBB1_15:
- mov     eax, 1
- pop     rbx
- pop     r14
- ret
+	mov eax, 1
+	pop rbx
+	.cfi_def_cfa_offset 16
+	pop r14
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
+	.cfi_restore r14
+		// src/memchr_new.rs:366
+		}
+	ret
 .LBB1_9:
- pop     rbx
- pop     r14
- ret
+	.cfi_def_cfa_offset 24
+	.cfi_offset rbx, -24
+	.cfi_offset r14, -16
+	pop rbx
+	.cfi_def_cfa_offset 16
+	pop r14
+	.cfi_def_cfa_offset 8
+	.cfi_restore rbx
+	.cfi_restore r14
+	ret
