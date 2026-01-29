@@ -189,8 +189,8 @@ Example of borrow propagation (LE byte order):
 - Subtracting 0x0101.. borrows from the 0x01 byte when processing 0x00
 - Classic SWAR reports both bytes as candidates despite only 0x00 being truly zero
 - 64 Bit example (X is an arbirary value in this used to demonstrate 'it does not matter')
-- If a byte in a word is  0x01 (eg 0000_00001 ->(apply NOT) 1111_1110 ->(apply <<7) -> 0XXX_XXX  [DOES NOT HAVE ITS HIGH BIT SET]
-- If a byte in a word is 0x00 (eg 0000_00000 -> (apply NOT) 1111_1111 ->(apply <<7)  1XXX_XXXX [HAS ITS HIGH BIT SET]
+- If a byte in a word is  0x01 (eg 0000_0001 ->(apply NOT) 1111_1110 ->(apply <<7) -> 0XXX_XXX  [DOES NOT HAVE ITS HIGH BIT SET]
+- If a byte in a word is 0x00 (eg 0000_0000 -> (apply NOT) 1111_1111 ->(apply <<7)  1XXX_XXXX [HAS ITS HIGH BIT SET]
 - Any x00 byte in a word becomes(via the HASZERO approach), 0x80 (1000_0000) -> 1000_0000 & 1XXX_XXX == 1000_0000 == 0x80 (UNCHANGED)
 - Any x01 byte(falsely propagated) will become 0XXX_XXX -> 0XXX_XXXX & 1000_0000 == 0000_0000==0x00 (removed)
 - Any non 0x00/0x01 byte in the word will become 0 anyway, and 0000_0000 & X (anything)==0x00
@@ -235,7 +235,8 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
 
     /* Stage 2: Eliminate borrow-induced false positives */
     classic &= !input << 7;
-    /* Compiler reuses !input from previous calculation aka (not RDI) */
+    /* Compiler reuses !input from previous calculation due to common subexpression elimination (CSE)  */
+    // Equivalently, !(input <<7) would work but is NOT a candidate for CSE
 
     /*
     SAFETY: `classic != 0` from stage 1 guarantees at least one true zero byte exists.
@@ -245,7 +246,6 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
 }
 
 /// Returns the last index matching the byte `x` in `text`.
-///
 #[must_use]
 #[allow(clippy::missing_inline_in_public_items)] // Match semantics of std
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
@@ -317,6 +317,12 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
         // **CHECK UPPER FIRST**
         //XOR to turn the matching bytes to NUL
         // This swar algorithm has the benefit of not propagating 0xFF rightwards/leftwards after a match is found
+
+        /*
+        // DO NOT REORDER THIS INTO EG IT GIVES MUCH WORSE ASSEMBLY
+         #[cfg(target_endian = "big")]
+         let (maybe_match_upper,maybe_match_lower)=(contains_zero_byte(upper ^ repeated_x),contains_zero_byte(lower ^ repeated_x));
+         */
 
         #[cfg(target_endian = "big")]
         let maybe_match_upper = contains_zero_byte(upper ^ repeated_x);
@@ -467,3 +473,128 @@ and     rax, rcx
 ret
 
    */
+
+/*
+
+// This gives 1 less instruction than memrchr as it is, weird, might investigate more.
+
+#[inline]
+// Check assembly to see if we need this Adrian, you did it lol.
+// 1 fewer instruction using this, need to look at more.
+const unsafe fn rposition_byte_len(base: *const u8, len: usize, needle: u8) -> Option<usize> {
+    let mut i = len;
+    while i != 0 {
+        i -= 1;
+        // SAFETY: trivially within bounds
+        if unsafe { base.add(i).read() } == needle {
+            return Some(i);
+        }
+    }
+    None
+}
+
+#[must_use]
+#[inline(never)]
+#[expect(clippy::cast_ptr_alignment, reason = "alignment guaranteed")]
+pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
+    // Scan for a single byte value by reading two `usize` words at a time.
+
+    //
+
+    // Split `text` in three parts:
+
+    // - unaligned tail, after the last word aligned address in text,
+
+    // - body, scanned by 2 words at a time,
+
+    // - the first remaining bytes, < 2 word size.
+
+    let len = text.len();
+
+    let ptr = text.as_ptr();
+
+    let (min_aligned_offset, max_aligned_offset) = {
+        // We call this just to obtain the length of the prefix and suffix.
+
+        // In the middle we always process two chunks at once.
+
+        // SAFETY: transmuting `[u8]` to `[usize]` is safe except for size differences
+
+        // which are handled by `align_to`.
+
+        let (prefix, _, suffix) = unsafe { text.align_to::<(usize, usize)>() };
+
+        (prefix.len(), len - suffix.len())
+    };
+
+    let mut offset = max_aligned_offset;
+
+    let start = text.as_ptr();
+    let tail_len = len - offset; // tail is [offset, len)
+    // SAFETY: trivially within bounds
+    if let Some(i) = unsafe { rposition_byte_len(start.add(offset), tail_len, x) } {
+        return Some(offset + i);
+    }
+    /*
+    This adds an extra ~10 instructions!(on x86 v1) (from std.) definitely worthwhile to avoid!
+
+     if let Some(index) = text[offset..].iter().rposition(|elt| *elt == x) {
+        return Some(offset + index);
+    }
+
+
+     */
+
+    // Search the body of the text, make sure we don't cross min_aligned_offset.
+
+    // offset is always aligned, so just testing `>` is sufficient and avoids possible
+
+    // overflow.
+
+    let repeated_x = repeat_u8(x);
+
+    while offset > min_aligned_offset {
+        // SAFETY: offset starts at len - suffix.len(), as long as it is greater than
+        // min_aligned_offset (prefix.len()) the remaining distance is at least 2 * chunk_bytes.
+        // SAFETY: the body is trivially aligned due to align_to, avoid the cost of unaligned reads(same as memchr/memrchr in STD)
+        let lower = unsafe { ptr.add(offset - 2 * USIZE_BYTES).cast::<usize>().read() };
+        // SAFETY: as above
+        let upper = unsafe { ptr.add(offset - USIZE_BYTES).cast::<usize>().read() };
+
+        // Break if there is a matching byte.
+        // **CHECK UPPER FIRST**
+        //XOR to turn the matching bytes to NUL
+        // This swar algorithm has the benefit of not propagating 0xFF rightwards/leftwards after a match is found
+
+        #[cfg(target_endian = "big")]
+        let maybe_match_upper = contains_zero_byte(upper ^ repeated_x);
+        #[cfg(target_endian = "little")]
+        // because of borrow issues propagating to LSB we need to do a fix for LE, not for BE though, slight win?!
+        let maybe_match_upper = contains_zero_byte_borrow_fix(upper ^ repeated_x);
+
+        if let Some(num) = maybe_match_upper {
+            let zero_byte_pos = find_last_nul(num);
+
+            return Some(offset - USIZE_BYTES + zero_byte_pos);
+        }
+
+        #[cfg(target_endian = "big")]
+        let maybe_match_lower = contains_zero_byte(lower ^ repeated_x);
+        #[cfg(target_endian = "little")]
+        let maybe_match_lower = contains_zero_byte_borrow_fix(lower ^ repeated_x);
+
+        if let Some(num) = maybe_match_lower {
+            // replace this function
+            let zero_byte_pos = find_last_nul(num);
+
+            return Some(offset - 2 * USIZE_BYTES + zero_byte_pos);
+        }
+
+        offset -= 2 * USIZE_BYTES;
+    }
+    // SAFETY: trivially within bounds
+    // Find the byte before the point the body loop stopped.
+    unsafe { rposition_byte_len(start, offset, x) }
+}
+
+*/
