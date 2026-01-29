@@ -188,11 +188,11 @@ Example of borrow propagation (LE byte order):
 - Input: `[0x00, 0x01]`
 - Subtracting 0x0101.. borrows from the 0x01 byte when processing 0x00
 - Classic SWAR reports both bytes as candidates despite only 0x00 being truly zero
-- 64 Bit example
-- If a byte in a word is  0x01 (eg 0000_00001 ->(apply <<7) 1000_0000 ->(apply a NOT/!) 01111_1111 ==!0x80
-- If a byte in a word is 0x00 (eg 0000_00000 -> (apply <<7 [UNCHANGED]) 0000_0000 ->(apply a NOT/!)  1111_1111 == 0xFF
-- Any x00 byte in a word becomes(via the HASZERO approach), 0x80 (1000_0000), -> 0x80 & 0xFF == 0x80 (retains its high bit)
-- Any x01 byte(falsely propagated) will become 0x80 but 0x80 & !0x80 ==0
+- 64 Bit example (X is an arbirary value in this used to demonstrate 'it does not matter')
+- If a byte in a word is  0x01 (eg 0000_00001 ->(apply NOT) 1111_1110 ->(apply <<7) -> 0XXX_XXX  [DOES NOT HAVE ITS HIGH BIT SET]
+- If a byte in a word is 0x00 (eg 0000_00000 -> (apply NOT) 1111_1111 ->(apply <<7)  1XXX_XXXX [HAS ITS HIGH BIT SET]
+- Any x00 byte in a word becomes(via the HASZERO approach), 0x80 (1000_0000) -> 1000_0000 & 1XXX_XXX == 1000_0000 == 0x80 (UNCHANGED)
+- Any x01 byte(falsely propagated) will become 0XXX_XXX -> 0XXX_XXXX & 1000_0000 == 0000_0000==0x00 (removed)
 - Any non 0x00/0x01 byte in the word will become 0 anyway, and 0000_0000 & X (anything)==0x00
 
 The correction `classic &= !input << 7` clears spurious bits:
