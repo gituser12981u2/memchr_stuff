@@ -3,7 +3,6 @@
 #![allow(dead_code)] //remove when finished
 //Check comprehensive tests in ./test.rs please
 
-
 // NOTE: this was written in a shitty vim on a 2gb laptop because my laptop broke
 // when I get a new one, ill tidy it up, editing is painful.
 // Unfortunately I got too bored....
@@ -124,7 +123,6 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
             let lower = *(ptr.add(offset) as *const usize);
             let upper = *(ptr.add(offset + USIZE_BYTES) as *const usize);
 
-        
             // check this branch first (lower has precedence, obvs, we want the FIRST match)
             // use nonzerousize for faster intrinsics (skipping all 0 case, faster on most architectures)
             // then  XOR to turn the matching bytes to NUL and NUL to `x`
@@ -176,20 +174,18 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
 // install this for testing when I get a new PC
 // https://www.qemu.org/docs/master/system/target-loongarch.html
 
-
 // SSE2 is baseline on x86_64, so we can use it for optimised memchr
 #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
-    use core::arch::x86_64::{__m128i as Element};
-    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
+    use core::arch::x86_64::__m128i as Element;
     use core::arch::x86_64::_mm_cmpeq_epi8 as COMPARE;
     use core::arch::x86_64::_mm_load_si128 as LOAD_ALIGNED;
-    use core::arch::x86_64::_mm_movemask_epi8 as  MOVEMASK;
+    use core::arch::x86_64::_mm_movemask_epi8 as MOVEMASK;
+    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
     use core::num::NonZeroI32;
 
- 
-    const ALIGNMENT: usize = align_of::<Element>();  
-    const CHUNK_SIZE: usize = 4*ALIGNMENT;  // Process 4x  chunks at a time
+    const ALIGNMENT: usize = align_of::<Element>();
+    const CHUNK_SIZE: usize = 4 * ALIGNMENT; // Process 4x  chunks at a time
     // The runtime version behaves the same as the compile time version, it's
     // just more optimised.
 
@@ -216,48 +212,47 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     // search the (aligned) body of the text using intrinsics
     unsafe {
         let needle = BROADCAST(x.cast_signed());
-        
+
         while offset + CHUNK_SIZE <= len {
             // SAFETY: the while's predicate guarantees a distance of at least CHUNK_SIZE bytes
             // between the offset and the end of the slice.
             // The pointer is aligned to CHUNK_SIZE boundary.
 
-           
             let chunk_ptr = ptr.add(offset).cast::<Element>();
-           //debug_assert!(chunk_ptr.is_aligned_to(ALIGNMENT));
-            
-            // Load 4x ALIGNMENT sized -byte aligned chunks 
+            //debug_assert!(chunk_ptr.is_aligned_to(ALIGNMENT));
+
+            // Load 4x ALIGNMENT sized -byte aligned chunks
             let chunk0 = LOAD_ALIGNED(chunk_ptr);
             let chunk1 = LOAD_ALIGNED(chunk_ptr.add(1));
             let chunk2 = LOAD_ALIGNED(chunk_ptr.add(2));
             let chunk3 = LOAD_ALIGNED(chunk_ptr.add(3));
-            
+
             // Compare each chunk with needle
             let cmp0 = COMPARE(chunk0, needle);
             let cmp1 = COMPARE(chunk1, needle);
             let cmp2 = COMPARE(chunk2, needle);
             let cmp3 = COMPARE(chunk3, needle);
-            
+
             // Get bitmasks for each comparison and use a smarter intrinsic to use cttz_nonzero
             // Check each mask in order (first match wins)
-            if let Some(vmask0)=NonZeroI32::new(MOVEMASK(cmp0)) {
+            if let Some(vmask0) = NonZeroI32::new(MOVEMASK(cmp0)) {
                 let byte_pos = vmask0.trailing_zeros() as usize;
                 return Some(offset + byte_pos);
             }
-            if let Some(vmask1)=NonZeroI32::new(MOVEMASK(cmp1)){
+            if let Some(vmask1) = NonZeroI32::new(MOVEMASK(cmp1)) {
                 let byte_pos = vmask1.trailing_zeros() as usize;
-                return Some(offset +ALIGNMENT+ byte_pos);
+                return Some(offset + ALIGNMENT + byte_pos);
             }
 
-          if let Some(vmask2)=NonZeroI32::new(MOVEMASK(cmp2)){
+            if let Some(vmask2) = NonZeroI32::new(MOVEMASK(cmp2)) {
                 let byte_pos = vmask2.trailing_zeros() as usize;
-                return Some(offset +(2*ALIGNMENT)+ byte_pos);
+                return Some(offset + (2 * ALIGNMENT) + byte_pos);
             }
-            if let Some(vmask3)=NonZeroI32::new(MOVEMASK(cmp3)) {
+            if let Some(vmask3) = NonZeroI32::new(MOVEMASK(cmp3)) {
                 let byte_pos = vmask3.trailing_zeros() as usize;
-                return Some(offset + (3*ALIGNMENT) + byte_pos);
+                return Some(offset + (3 * ALIGNMENT) + byte_pos);
             }
-            
+
             offset += CHUNK_SIZE;
         }
     }
@@ -266,7 +261,6 @@ fn memchr_aligned(x: u8, text: &[u8]) -> Option<usize> {
     let slice = unsafe { core::slice::from_raw_parts(ptr.add(offset), len - offset) };
     memchr_naive(x, slice).map(|i| offset + i)
 }
-
 
 /*
 MY STUPID COMMENTARY
@@ -345,11 +339,13 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
     - subtracting `0x01..` borrows from the `0x00` byte into the next byte, so the classic mask may
       report both bytes as candidates even though only the first byte is truly zero.
 
-    `input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
-    0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.*/
-    classic &= !(input << 7);
+    `!input << 7` moves each byte’s low bit into that byte’s 0x80 position; bytes with LSB=1 (notably
+    0x01, which is the common “borrow false-positive” case) get their candidate bit cleared.
+    !input is reused due to CSE to
+    */
+    classic &= !input << 7;
     // I didn't find this approach anywhere online, took a lot of work!
-    // This approach adds an extra 3 instructions (or 2 if architecture has andn)
+    // This approach adds an extra 2 instructions (shift and AND)
     // Meanwhile the typical approach in http://0x80.pl/notesen/2016-11-28-simd-strfind.html#swar
     /*
 
@@ -371,22 +367,20 @@ pub(crate) const fn contains_zero_byte_borrow_fix(input: usize) -> Option<NonZer
     Some(unsafe { NonZeroUsize::new_unchecked(classic) })
 }
 
-
-
 /// Returns the last index matching the byte `x` in `text`.
 // SSE2 is baseline on x86_64, so we can use it for optimised memrchr
 #[must_use]
 #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
 pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     use core::arch::x86_64::__m128i as Element;
-    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
     use core::arch::x86_64::_mm_cmpeq_epi8 as COMPARE;
     use core::arch::x86_64::_mm_load_si128 as LOAD_ALIGNED;
-    use core::arch::x86_64:: _mm_movemask_epi8 as MOVEMASK;
-   use core::num::NonZeroI32; // for smarter intrinsics
-    const ALIGNMENT:usize=align_of::<Element>();
-    const CHUNK_SIZE: usize = 4*ALIGNMENT;  // Process 4x aligned chunks at a time
-    
+    use core::arch::x86_64::_mm_movemask_epi8 as MOVEMASK;
+    use core::arch::x86_64::_mm_set1_epi8 as BROADCAST;
+    use core::num::NonZeroI32; // for smarter intrinsics
+    const ALIGNMENT: usize = align_of::<Element>();
+    const CHUNK_SIZE: usize = 4 * ALIGNMENT; // Process 4x aligned chunks at a time
+
     // Scan for a single byte value from the end usingiIntrinsics.
     // Split `text` in three parts:
     // - unaligned tail, after the last aligned address
@@ -395,19 +389,20 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
 
     let len = text.len();
     let ptr = text.as_ptr();
-    
+
     // Use align_to to get the prefix and suffix lengths
     let (min_aligned_offset, max_aligned_offset) = {
         // We call this just to obtain the length of the prefix and suffix.
         // In the middle we always process four `Elements` at once.
-        // SAFETY: transmuting `[u8]` to a tuple of `Element` is safe 
+        // SAFETY: transmuting `[u8]` to a tuple of `Element` is safe
         // except for size differences which are handled by `align_to`.
-        let (prefix, _, suffix) = unsafe { text.align_to::<(Element,Element,Element,Element)>() };
+        let (prefix, _, suffix) =
+            unsafe { text.align_to::<(Element, Element, Element, Element)>() };
         (prefix.len(), len - suffix.len())
     };
-    
+
     let mut offset = max_aligned_offset;
-    
+
     // Search the unaligned tail first
     // SAFETY: `offset` is computed as `len - suffix.len()`, so `offset <= len`.
     // Therefore the range `offset..` is a valid subslice of `text`.
@@ -418,12 +413,11 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
     } {
         return Some(offset + index);
     }
-    
+
     // Now search the aligned body going backwards
     unsafe {
         let needle = BROADCAST(x.cast_signed());
-        
-        
+
         // Process 4*`ALIGMENT` suzed chunks  going backwards
         // offset is always aligned, so just testing `>` is sufficient and avoids possible overflow.
         while offset > min_aligned_offset {
@@ -431,45 +425,42 @@ pub fn memrchr(x: u8, text: &[u8]) -> Option<usize> {
             // min_aligned_offset (prefix.len()) the remaining distance is at least CHUNK_SIZE.
             // The body is trivially aligned due to align_to, avoid the cost of unaligned reads
             let chunk_ptr = ptr.add(offset - CHUNK_SIZE).cast::<Element>();
-            
+
             // Load 4x  `ALIGNMENTS` (equal to chunk size)
             let chunk0 = LOAD_ALIGNED(chunk_ptr);
             let chunk1 = LOAD_ALIGNED(chunk_ptr.add(1));
             let chunk2 = LOAD_ALIGNED(chunk_ptr.add(2));
             let chunk3 = LOAD_ALIGNED(chunk_ptr.add(3));
-            
+
             // Compare each chunk with needle
             let cmp0 = COMPARE(chunk0, needle);
             let cmp1 = COMPARE(chunk1, needle);
             let cmp2 = COMPARE(chunk2, needle);
             let cmp3 = COMPARE(chunk3, needle);
-            
-            
-     
-            
+
             // Check each mask in reverse order (last match wins)
             // Check upper first for reverse search
-            if let Some(vmask3) = NonZeroI32::new(MOVEMASK(cmp3)){
+            if let Some(vmask3) = NonZeroI32::new(MOVEMASK(cmp3)) {
                 let byte_pos = 31 - vmask3.leading_zeros() as usize;
-                return Some(offset - CHUNK_SIZE + (3*ALIGNMENT) + byte_pos);
+                return Some(offset - CHUNK_SIZE + (3 * ALIGNMENT) + byte_pos);
             }
             if let Some(vmask2) = NonZeroI32::new(MOVEMASK(cmp2)) {
                 let byte_pos = 31 - vmask2.leading_zeros() as usize;
-                return Some(offset - CHUNK_SIZE + (2*ALIGNMENT) + byte_pos);
+                return Some(offset - CHUNK_SIZE + (2 * ALIGNMENT) + byte_pos);
             }
             if let Some(vmask1) = NonZeroI32::new(MOVEMASK(cmp1)) {
                 let byte_pos = 31 - vmask1.leading_zeros() as usize;
                 return Some(offset - CHUNK_SIZE + ALIGNMENT + byte_pos);
             }
-            if let Some(vmask0) = NonZeroI32::new(MOVEMASK(cmp0)){
+            if let Some(vmask0) = NonZeroI32::new(MOVEMASK(cmp0)) {
                 let byte_pos = 31 - vmask0.leading_zeros() as usize;
                 return Some(offset - CHUNK_SIZE + byte_pos);
             }
-            
+
             offset -= CHUNK_SIZE;
         }
     }
-    
+
     // Find the last match in the remaining prefix.
     // SAFETY: `offset` is monotonically decreased from `max_aligned_offset <= len`,
     // and the loop condition guarantees `offset >= min_aligned_offset >= 0`.
