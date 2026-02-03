@@ -209,8 +209,8 @@ criterion_group!(
     name = benches;
     config = Criterion::default()
         .warm_up_time(Duration::from_millis(200))
-        .measurement_time(Duration::from_millis(1000))
-        .sample_size(10000)
+        .measurement_time(Duration::from_millis(500))
+        .sample_size(500)
         .configure_from_args();
     targets = bench_memchr,bench_memrchr
 );
