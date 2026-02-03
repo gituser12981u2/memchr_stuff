@@ -4,7 +4,6 @@ use memchr_stuff::memchr_new;
 use memchr_stuff::memchr_old;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::mem::size_of;
 use std::time::Duration;
 
 const RANDOM_SEED: u64 = 4269; //change as needed
