@@ -1,9 +1,10 @@
 use core::hint::black_box;
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use memchr_stuff::memchr_new;
 use memchr_stuff::memchr_old;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::mem::size_of;
 use std::time::Duration;
 
 const RANDOM_SEED: u64 = 4269; //change as needed
@@ -121,6 +122,8 @@ fn run_bench(
                 // Sanity check
                 assert_eq!(aligned, data_slice.as_ptr().cast::<usize>().is_aligned());
                 let new_size = data_slice.len();
+
+                group.throughput(Throughput::Bytes(new_size as u64));
                 if SKIP_LESS_THAN_2_WORDS && new_size < 2 * WORD_SIZE {
                     continue; //No point testing <2 usize
                 };
