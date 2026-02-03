@@ -8,16 +8,22 @@ use std::time::Duration;
 
 const RANDOM_SEED: u64 = 4269; //change as needed
 
-fn create_test_arrays() -> Vec<usize> {
-    // no point testing 16 really. doesnt get to the GOOD part.
-    let aligned_sizes = [16usize, 64, 256, 1024, 8 * 1024, 64 * 1024];
-    let mut sizes = Vec::with_capacity(aligned_sizes.len() * 2);
-    for &size in &aligned_sizes {
-        sizes.push(size);
-        sizes.push(size + 7);
-    }
-    sizes
-}
+const WORD_SIZE: usize = size_of::<usize>();
+
+const SKIP_LESS_THAN_2_WORDS: bool = true;
+// CHANGE AS WANTED
+const BENCH_MARK_SIZES: &[usize] = &[
+    2 * WORD_SIZE,
+    4 * WORD_SIZE,
+    8 * WORD_SIZE,
+    16 * WORD_SIZE,
+    24 * WORD_SIZE,
+    32 * WORD_SIZE,
+    1024,
+    4 * 1024,
+    8 * 1024,
+    64 * 1024,
+];
 
 #[derive(Clone, Copy, Debug)]
 enum Placement {
@@ -30,7 +36,7 @@ enum Placement {
 }
 
 impl Placement {
-    fn name(self) -> &'static str {
+    const fn name(self) -> &'static str {
         match self {
             Placement::Absent => "absent",
             Placement::Start => "start",
@@ -57,26 +63,18 @@ fn make_data(size: usize, needle: u8, placement: Placement) -> Vec<u8> {
             }
         }
         Placement::Start => {
-            if size > 0 {
-                data[0] = needle;
-            }
+            data[0] = needle;
         }
         Placement::Middle => {
-            if size > 0 {
-                data[size / 2] = needle;
-            }
+            data[size / 2] = needle;
         }
         Placement::End => {
-            if size > 0 {
-                data[size - 1] = needle;
-            }
+            data[size - 1] = needle;
         }
         Placement::Multiple => {
-            if size > 0 {
-                data[size / 4] = needle;
-                data[size / 2] = needle;
-                data[size - 1] = needle;
-            }
+            data[size / 4] = needle;
+            data[size / 2] = needle;
+            data[size - 1] = needle;
         }
         Placement::RandomBytes => {
             let mut rng = StdRng::seed_from_u64(RANDOM_SEED ^ size as u64);
@@ -87,130 +85,88 @@ fn make_data(size: usize, needle: u8, placement: Placement) -> Vec<u8> {
                 }
             }
 
-            if size > 0 {
-                data[0] = needle;
-                data[size / 2] = needle;
-                data[size - 1] = needle;
-            }
+            data[0] = needle;
+            data[size / 2] = needle;
+            data[size - 1] = needle;
         }
     }
 
     data
 }
 
-fn alignment_label(size: usize) -> &'static str {
-    if size % 8 == 0 {
-        "Aligned"
-    } else {
-        "Unaligned"
+fn run_bench(
+    c: &mut Criterion,
+    group_name: &str,
+    old_fn: fn(u8, &[u8]) -> Option<usize>,
+    new_fn: fn(u8, &[u8]) -> Option<usize>,
+) {
+    let mut group = c.benchmark_group(group_name);
+
+    let placements = [
+        Placement::Absent,
+        Placement::Start,
+        Placement::Middle,
+        Placement::End,
+        Placement::Multiple,
+        Placement::RandomBytes,
+    ];
+    let needle = 1u8;
+    for size in BENCH_MARK_SIZES {
+        for aligned in [false, true] {
+            for placement in placements {
+                let label = if aligned { "aligned" } else { "unaligned" };
+                let data = make_data(*size, needle, placement);
+                // Purposefully unalign it if so.
+                let data_slice: &[u8] = if !aligned { &data[1..] } else { &data[..] };
+                // Sanity check
+                assert_eq!(aligned, data_slice.as_ptr().cast::<usize>().is_aligned());
+                let new_size = data_slice.len();
+                if SKIP_LESS_THAN_2_WORDS && new_size < 2 * WORD_SIZE {
+                    continue; //No point testing <2 usize
+                };
+
+                group.bench_with_input(
+                    BenchmarkId::new(format!("std/{}/{}", placement.name(), label), new_size),
+                    &data_slice,
+                    |b, data| b.iter(|| black_box(old_fn(black_box(needle), black_box(*data)))),
+                );
+
+                group.bench_with_input(
+                    BenchmarkId::new(format!("new/{}/{}", placement.name(), label), new_size),
+                    &data_slice,
+                    |b, data| b.iter(|| black_box(new_fn(black_box(needle), black_box(*data)))),
+                );
+            }
+        }
     }
+
+    group.finish();
 }
 
 fn bench_memrchr(c: &mut Criterion) {
-    let mut group = c.benchmark_group("memrchr (REVERSED)");
-
-    let sizes = create_test_arrays();
-
-    let placements = [
-        Placement::Absent,
-        Placement::Start,
-        Placement::Middle,
-        Placement::End,
-        Placement::Multiple,
-        Placement::RandomBytes,
-    ];
-
-    for size in sizes {
-        let needle = 1u8;
-
-        for placement in placements {
-            let data = make_data(size, needle, placement);
-
-            group.bench_with_input(
-                BenchmarkId::new(
-                    format!("std/{}/{}", placement.name(), alignment_label(size)),
-                    size,
-                ),
-                &data,
-                |b, data| {
-                    b.iter(|| black_box(memchr_old::memrchr(black_box(needle), black_box(data))))
-                },
-            );
-
-            group.bench_with_input(
-                BenchmarkId::new(
-                    format!("new/{}/{}", placement.name(), alignment_label(size)),
-                    size,
-                ),
-                &data,
-                |b, data| {
-                    b.iter(|| black_box(memchr_new::memrchr(black_box(needle), black_box(data))))
-                },
-            );
-        }
-    }
-
-    group.finish();
+    run_bench(
+        c,
+        "memrchr (REVERSED)",
+        memchr_old::memrchr,
+        memchr_new::memrchr,
+    );
 }
 
 fn bench_memchr(c: &mut Criterion) {
-    let mut group = c.benchmark_group("memchr");
-
-    let sizes = create_test_arrays();
-
-    let placements = [
-        Placement::Absent,
-        Placement::Start,
-        Placement::Middle,
-        Placement::End,
-        Placement::Multiple,
-        Placement::RandomBytes,
-    ];
-
-    for size in sizes {
-        let needle = 1u8;
-
-        for placement in placements {
-            let data = make_data(size, needle, placement);
-
-            group.bench_with_input(
-                BenchmarkId::new(
-                    format!("std/{}/{}", placement.name(), alignment_label(size)),
-                    size,
-                ),
-                &data,
-                |b, data| {
-                    b.iter(|| black_box(memchr_old::memchr(black_box(needle), black_box(data))))
-                },
-            );
-
-            group.bench_with_input(
-                BenchmarkId::new(
-                    format!("new/{}/{}", placement.name(), alignment_label(size)),
-                    size,
-                ),
-                &data,
-                |b, data| {
-                    b.iter(|| {
-                        black_box(memchr_stuff::memchr_new::memchr(
-                            black_box(needle),
-                            black_box(data),
-                        ))
-                    })
-                },
-            );
-        }
-    }
-
-    group.finish();
+    run_bench(
+        c,
+        "memchr (FORWARD)",
+        memchr_old::memchr,
+        memchr_new::memchr,
+    );
 }
 
 criterion_group!(
     name = benches;
     config = Criterion::default()
-        .warm_up_time(Duration::from_millis(200))
+        .warm_up_time(Duration::from_millis(400))
         .measurement_time(Duration::from_millis(500))
-        .sample_size(500)
+        .sample_size(1000)
         .configure_from_args();
     targets = bench_memchr,bench_memrchr
 );
