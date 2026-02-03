@@ -10,7 +10,7 @@ const RANDOM_SEED: u64 = 4269; //change as needed
 
 fn create_test_arrays() -> Vec<usize> {
     // no point testing 16 really. doesnt get to the GOOD part.
-    let aligned_sizes = [/*16usize,*/ 64, 256, 1024, 8 * 1024, 64 * 1024];
+    let aligned_sizes = [16usize, 64, 256, 1024, 8 * 1024, 64 * 1024];
     let mut sizes = Vec::with_capacity(aligned_sizes.len() * 2);
     for &size in &aligned_sizes {
         sizes.push(size);
@@ -212,6 +212,6 @@ criterion_group!(
         .measurement_time(Duration::from_millis(1000))
         .sample_size(10000)
         .configure_from_args();
-    targets = bench_memrchr, bench_memchr
+    targets = bench_memchr,bench_memrchr
 );
 criterion_main!(benches);
