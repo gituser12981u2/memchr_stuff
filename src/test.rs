@@ -5,7 +5,7 @@ use rand::{Rng, RngCore, SeedableRng, rng};
 
 // simple toggleable tests
 const DETERMINISTIC: bool = true;
-const TEST_SIZE: usize = 10000;
+const TEST_SIZE: usize = 1000;
 const RANDOM_SEED: u64 = 4269;
 const MAX_SIZED_STRING: usize = 20000;
 

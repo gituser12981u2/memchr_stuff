@@ -1,5 +1,3 @@
-#![allow(internal_features)]
-#![feature(core_intrinsics, const_eval_select)]
 #![allow(
     clippy::blanket_clippy_restriction_lints,
     clippy::host_endian_bytes,
@@ -24,7 +22,6 @@
 )]
 pub mod finder;
 pub mod memchr_new;
-pub mod memchr_old;
 pub mod num;
 
 #[cfg(test)]
